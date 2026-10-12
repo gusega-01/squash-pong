@@ -18,7 +18,7 @@
             height: 100vh; overflow: hidden;
         }
         #contenedor-camara {
-            position: relative; width: 90vw; max-width: 640px; height: 50vh;
+            position: relative; width: 90vw; max-width: 640px; height: 45vh;
             border: 3px solid #333; border-radius: 10px; background-color: #000;
         }
         video { display: none; }
@@ -26,16 +26,22 @@
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             transform: scaleX(-1);
         }
-        #panel-control { margin-top: 15px; text-align: center; width: 90vw; max-width: 640px; }
-        input {
-            padding: 10px; width: 40%; border-radius: 5px;
+        #panel-control { 
+            margin-top: 15px; text-align: center; width: 90vw; max-width: 640px; 
+            display: flex; flex-direction: column; gap: 10px; align-items: center;
+        }
+        .fina-linea { display: flex; gap: 8px; justify-content: center; width: 100%; }
+        input, select {
+            padding: 10px; border-radius: 5px;
             border: 1px solid #555; background-color: #222; color: white; text-align: center;
         }
+        input { width: 50%; }
+        select { width: 40%; }
         button {
             padding: 10px 15px; background-color: #00ffcc; color: black;
             border: none; border-radius: 5px; font-weight: bold; cursor: pointer;
         }
-        #estado-conexion { margin-top: 10px; font-size: 14px; color: #ff3333; }
+        #estado-conexion { font-size: 14px; color: #ff3333; }
     </style>
 </head>
 <body>
@@ -48,7 +54,15 @@
     </div>
 
     <div id="panel-control">
-        <input type="text" id="ip_tv" value="192.168.100.8" placeholder="IP TV">
+        <div class="fina-linea">
+            <!-- SELECTOR DE CÁMARAS -->
+            <select id="selector-camara" onchange="cambiarCamara()">
+                <option value="">Cargando cámaras...</option>
+            </select>
+            
+            <input type="text" id="ip_tv" value="192.168.100.8" placeholder="IP TV">
+        </div>
+        
         <button onclick="conectarWebSocket()">Conectar a TV</button>
         <div id="estado-conexion">Desconectado de la TV</div>
     </div>
@@ -58,13 +72,57 @@
     const canvasElement = document.getElementById('lienzo_dibujo');
     const canvasCtx = canvasElement.getContext('2d');
     const estadoConexion = document.getElementById('estado-conexion');
+    const selectorCamara = document.getElementById('selector-camara');
     
     let ws = null;
+    let cameraInstance = null;
     let ultimasCoordenadasMano = { x: 0, y: 0, tiempo: Date.now() };
 
-    // VARIABLES DE SENSIBILIDAD Y CALIBRACIÓN
-    const FACTOR_SENSIBILIDAD_X = 2.5; // Multiplica los pasos laterales (Aumentar si se mueve poco)
-    let posXFiltrada = 0.5; // Para movimiento fluido
+    const FACTOR_SENSIBILIDAD_X = 2.5;
+    let posXFiltrada = 0.5;
+
+    // Listar las cámaras disponibles en el celular (trasera, frontal, etc.)
+    async function listarCamaras() {
+        try {
+            await navigator.mediaDevices.getUserMedia({ video: true });
+            const dispositivos = await navigator.mediaDevices.enumerateDevices();
+            const videoDispositivos = dispositivos.filter(d => d.kind === 'videoinput');
+            
+            selectorCamara.innerHTML = '';
+            videoDispositivos.forEach((dispositivo, i) => {
+                const opcion = document.createElement('option');
+                opcion.value = dispositivo.deviceId;
+                opcion.text = dispositivo.label || `Cámara ${i + 1}`;
+                selectorCamara.appendChild(opcion);
+            });
+
+            if (videoDispositivos.length > 0) {
+                iniciarCamara(videoDispositivos[0].deviceId);
+            }
+        } catch (e) {
+            alert("No se pudo acceder a las cámaras. Verificá los permisos.");
+        }
+    }
+
+    function cambiarCamara() {
+        const deviceId = selectorCamara.value;
+        if (deviceId) {
+            iniciarCamara(deviceId);
+        }
+    }
+
+    function iniciarCamara(deviceId) {
+        if (cameraInstance) {
+            cameraInstance.stop();
+        }
+
+        cameraInstance = new Camera(videoElement, {
+            onFrame: async () => { await pose.send({image: videoElement}); },
+            width: 640, height: 480,
+            deviceId: deviceId
+        });
+        cameraInstance.start();
+    }
 
     function conectarWebSocket() {
         const ipTV = document.getElementById('ip_tv').value.trim();
@@ -109,12 +167,6 @@
 
     pose.onResults(onResults);
 
-    const camera = new Camera(videoElement, {
-        onFrame: async () => { await pose.send({image: videoElement}); },
-        width: 640, height: 480
-    });
-    camera.start();
-
     function onResults(results) {
         canvasElement.width = canvasElement.clientWidth;
         canvasElement.height = canvasElement.clientHeight;
@@ -128,23 +180,15 @@
             const p = results.poseLandmarks;
             const hombroIzq = p[11], hombroDer = p[12], muñecaDer = p[16];
 
-            // 1. Calculamos el centro actual del cuerpo en X (0.0 a 1.0)
             const centroX_Bruto = (hombroIzq.x + hombroDer.x) / 2;
-
-            // 2. Aplicamos la Sensibilidad: Amplificamos la distancia desde el centro (0.5)
             let posX_Calculada = 0.5 + (centroX_Bruto - 0.5) * FACTOR_SENSIBILIDAD_X;
-            
-            // Limitamos que no se salga del rango 0 a 1
             posX_Calculada = Math.max(0.0, Math.min(1.0, posX_Calculada));
 
-            // 3. Filtro de suavizado Lerp (Evita saltos bruscos)
             posXFiltrada = posXFiltrada + (posX_Calculada - posXFiltrada) * 0.3;
 
-            // Profundidad (Acercarse/Alejarse)
             const anchoHombros = Math.hypot(hombroIzq.x - hombroDer.x, hombroIzq.y - hombroDer.y);
             const posY = Math.min(Math.max((anchoHombros - 0.10) / 0.25, 0), 1);
 
-            // Detección de Golpe por velocidad de la mano
             const ahora = Date.now();
             const dt = (ahora - ultimasCoordenadasMano.tiempo) / 1000;
             const velocidadManoY = (ultimasCoordenadasMano.y - muñecaDer.y) / (dt || 0.001);
@@ -152,7 +196,6 @@
 
             ultimasCoordenadasMano = { x: muñecaDer.x, y: muñecaDer.y, tiempo: ahora };
 
-            // Dibujar Monigote en la pantalla del celular
             const drawX = posXFiltrada * canvasElement.width;
             const drawY = canvasElement.height / 2;
             canvasCtx.strokeStyle = "#ffffff";
@@ -166,7 +209,6 @@
 
             const colorRaqueta = detectarColorRaqueta(muñecaDer.x * canvasElement.width, muñecaDer.y * canvasElement.height);
 
-            // Enviar datos calibrados a la TV
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
                     raqueta: colorRaqueta,
@@ -178,6 +220,9 @@
         }
         canvasCtx.restore();
     }
+
+    // Iniciar la detección de cámaras al cargar
+    listarCamaras();
 </script>
 </body>
 </html>
