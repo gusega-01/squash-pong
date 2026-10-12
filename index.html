@@ -1,57 +1,165 @@
-extends Node2D
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controlador Squash Pong 3D</title>
+    
+    <!-- Librerías de MediaPipe y Camera Utils -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
 
-var server = WebSocketMultiplayerPeer.new()
-var port = 8080
+    <style>
+        body {
+            margin: 0; padding: 0;
+            background-color: #121212; color: #ffffff;
+            font-family: Arial, sans-serif;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            height: 100vh; overflow: hidden;
+        }
+        #contenedor-camara {
+            position: relative; width: 90vw; max-width: 640px; height: 50vh;
+            border: 3px solid #333; border-radius: 10px; background-color: #000;
+        }
+        video { display: none; }
+        canvas {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            transform: scaleX(-1);
+        }
+        #panel-control { margin-top: 15px; text-align: center; width: 90vw; max-width: 640px; }
+        input {
+            padding: 10px; width: 50%; border-radius: 5px;
+            border: 1px solid #555; background-color: #222; color: white; text-align: center;
+        }
+        button {
+            padding: 10px 15px; background-color: #00ffcc; color: black;
+            border: none; border-radius: 5px; font-weight: bold; cursor: pointer;
+        }
+        #estado-conexion { margin-top: 10px; font-size: 14px; color: #ff3333; }
+    </style>
+</head>
+<body>
 
-# Variables del juego
-var pos_jugador = Vector2.ZERO
-var golpe_jugador = false
-var raqueta_color = "azul"
+    <h2>CÁMARA DEL JUGADOR</h2>
+    
+    <div id="contenedor-camara">
+        <video id="webcam" autoplay playsinline></video>
+        <canvas id="lienzo_dibujo"></canvas>
+    </div>
 
-func _ready():
-	# Iniciar servidor WebSocket compatible con Godot 4
-	var err = server.create_server(port)
-	if err == OK:
-		print("Servidor listo en la TV en el puerto: ", port)
-	else:
-		print("Error al iniciar servidor WebSocket: ", err)
+    <div id="panel-control">
+        <input type="text" id="ip_tv" value="192.168.100.8" placeholder="IP TV (ej: 192.168.100.8)">
+        <button onclick="conectarWebSocket()">Conectar a TV</button>
+        <div id="estado-conexion">Desconectado de la TV</div>
+    </div>
 
-func _process(_delta):
-	server.poll()
-	if server.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED:
-		while server.get_available_packet_count() > 0:
-			var packet = server.get_packet()
-			var json_str = packet.get_string_from_utf8()
-			_procesar_datos_celular(json_str)
-	
-	queue_redraw() # Redibuja la pantalla constantemente
+<script>
+    const videoElement = document.getElementById('webcam');
+    const canvasElement = document.getElementById('lienzo_dibujo');
+    const canvasCtx = canvasElement.getContext('2d');
+    const estadoConexion = document.getElementById('estado-conexion');
+    
+    let ws = null;
+    let ultimasCoordenadasMano = { x: 0, y: 0, tiempo: Date.now() };
 
-func _procesar_datos_celular(json_str):
-	var json = JSON.new()
-	if json.parse(json_str) == OK:
-		var datos = json.get_data()
-		
-		var pantalla_ancho = get_viewport_rect().size.x
-		var pantalla_alto = get_viewport_rect().size.y
-		
-		# Mapeamos la coordenada (0.0 a 1.0) enviada por el celular al tamaño de la pantalla
-		pos_jugador.x = datos.get("x", 0.5) * pantalla_ancho
-		pos_jugador.y = datos.get("y", 0.5) * pantalla_alto
-		golpe_jugador = datos.get("golpe", 0) == 1
-		raqueta_color = datos.get("raqueta", "azul")
+    function conectarWebSocket() {
+        const ipTV = document.getElementById('ip_tv').value.trim();
+        if(!ipTV) return alert("Ingresá la IP de la Android TV");
 
-# Dibujamos en pantalla el fondo negro y el jugador
-func _draw():
-	# Fondo Negro
-	draw_rect(Rect2(Vector2.ZERO, get_viewport_rect().size), Color.BLACK)
-	
-	# Dibujar Jugador Stickman Blanco
-	var cabeza_pos = pos_jugador - Vector2(0, 40)
-	draw_circle(cabeza_pos, 20.0, Color.WHITE) # Cabeza
-	draw_line(cabeza_pos, pos_jugador + Vector2(0, 50), Color.WHITE, 6.0) # Cuerpo
-	
-	# Dibujar Raqueta según color detectado
-	var color_dibujo = Color.DODGER_BLUE if raqueta_color == "azul" else Color.ORANGE
-	if golpe_jugador:
-		draw_circle(pos_jugador + Vector2(30, -30), 25.0, Color.YELLOW) # Efecto de golpe
-	draw_circle(pos_jugador + Vector2(30, -10), 15.0, color_dibujo)
+        estadoConexion.innerText = "Conectando a " + ipTV + "...";
+        estadoConexion.style.color = "#ffcc00";
+
+        ws = new WebSocket("ws://" + ipTV + ":8080");
+
+        ws.onopen = () => {
+            estadoConexion.innerText = "¡Conectado exitosamente!";
+            estadoConexion.style.color = "#00ff00";
+        };
+
+        ws.onclose = () => {
+            estadoConexion.innerText = "Conexión cerrada. Verificá la IP.";
+            estadoConexion.style.color = "#ff3333";
+        };
+    }
+
+    function detectarColorRaqueta(x, y) {
+        if (x < 0 || y < 0 || x > canvasElement.width || y > canvasElement.height) return "azul";
+        try {
+            const pixelData = canvasCtx.getImageData(x, y, 1, 1).data;
+            const r = pixelData[0], g = pixelData[1], b = pixelData[2];
+            if (r > 160 && g > 70 && b < 90) return "naranja";
+        } catch(e) {}
+        return "azul";
+    }
+
+    const pose = new Pose({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+    });
+
+    pose.setOptions({
+        modelComplexity: 1,
+        smoothLandmarks: true,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+    });
+
+    pose.onResults(onResults);
+
+    const camera = new Camera(videoElement, {
+        onFrame: async () => { await pose.send({image: videoElement}); },
+        width: 640, height: 480
+    });
+    camera.start();
+
+    function onResults(results) {
+        canvasElement.width = canvasElement.clientWidth;
+        canvasElement.height = canvasElement.clientHeight;
+
+        canvasCtx.save();
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        canvasCtx.fillStyle = "#000000";
+        canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
+
+        if (results.poseLandmarks) {
+            const p = results.poseLandmarks;
+            const hombroIzq = p[11], hombroDer = p[12], muñecaDer = p[16];
+
+            const posX = (hombroIzq.x + hombroDer.x) / 2;
+            const anchoHombros = Math.hypot(hombroIzq.x - hombroDer.x, hombroIzq.y - hombroDer.y);
+            const posY = Math.min(Math.max((anchoHombros - 0.12) / 0.30, 0), 1);
+
+            const ahora = Date.now();
+            const dt = (ahora - ultimasCoordenadasMano.tiempo) / 1000;
+            const velocidadManoY = (ultimasCoordenadasMano.y - muñecaDer.y) / (dt || 0.001);
+            const golpe = velocidadManoY > 1.2 ? 1 : 0;
+
+            ultimasCoordenadasMano = { x: muñecaDer.x, y: muñecaDer.y, tiempo: ahora };
+
+            const drawX = posX * canvasElement.width;
+            const drawY = canvasElement.height / 2;
+            canvasCtx.strokeStyle = "#ffffff";
+            canvasCtx.lineWidth = 5;
+            
+            canvasCtx.beginPath();
+            canvasCtx.arc(drawX, drawY - 30, 18, 0, 2 * Math.PI);
+            canvasCtx.moveTo(drawX, drawY - 12);
+            canvasCtx.lineTo(drawX, drawY + 35);
+            canvasCtx.stroke();
+
+            const colorRaqueta = detectarColorRaqueta(muñecaDer.x * canvasElement.width, muñecaDer.y * canvasElement.height);
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    raqueta: colorRaqueta,
+                    x: Number(posX.toFixed(3)),
+                    y: Number(posY.toFixed(3)),
+                    golpe: golpe
+                }));
+            }
+        }
+        canvasCtx.restore();
+    }
+</script>
+</body>
+</html>
