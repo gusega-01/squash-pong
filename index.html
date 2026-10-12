@@ -18,7 +18,7 @@
             height: 100vh; overflow: hidden;
         }
         #contenedor-camara {
-            position: relative; width: 90vw; max-width: 640px; height: 45vh;
+            position: relative; width: 90vw; max-width: 640px; height: 40vh;
             border: 3px solid #333; border-radius: 10px; background-color: #000;
         }
         video { display: none; }
@@ -27,26 +27,26 @@
             transform: scaleX(-1);
         }
         #panel-control { 
-            margin-top: 15px; text-align: center; width: 90vw; max-width: 640px; 
-            display: flex; flex-direction: column; gap: 10px; align-items: center;
+            margin-top: 10px; text-align: center; width: 90vw; max-width: 640px; 
+            display: flex; flex-direction: column; gap: 8px; align-items: center;
         }
         .fina-linea { display: flex; gap: 8px; justify-content: center; width: 100%; }
         input, select {
-            padding: 10px; border-radius: 5px;
+            padding: 8px; border-radius: 5px;
             border: 1px solid #555; background-color: #222; color: white; text-align: center;
         }
-        input { width: 50%; }
-        select { width: 40%; }
+        input { width: 45%; }
+        select { width: 45%; }
         button {
             padding: 10px 15px; background-color: #00ffcc; color: black;
-            border: none; border-radius: 5px; font-weight: bold; cursor: pointer;
+            border: none; border-radius: 5px; font-weight: bold; cursor: pointer; width: 90%;
         }
-        #estado-conexion { font-size: 14px; color: #ff3333; }
+        #estado-conexion { font-size: 13px; color: #ff3333; }
     </style>
 </head>
 <body>
 
-    <h2>CÁMARA DEL JUGADOR</h2>
+    <h2>CONTROL DE JUGADOR</h2>
     
     <div id="contenedor-camara">
         <video id="webcam" autoplay playsinline></video>
@@ -55,12 +55,18 @@
 
     <div id="panel-control">
         <div class="fina-linea">
-            <!-- SELECTOR DE CÁMARAS -->
+            <!-- SELECCIONAR JUGADOR -->
+            <select id="selector-jugador">
+                <option value="1">Jugador 1 (Azul)</option>
+                <option value="2">Jugador 2 (Naranja)</option>
+            </select>
+            <input type="text" id="ip_tv" value="192.168.100.8" placeholder="IP TV">
+        </div>
+
+        <div class="fina-linea">
             <select id="selector-camara" onchange="cambiarCamara()">
                 <option value="">Cargando cámaras...</option>
             </select>
-            
-            <input type="text" id="ip_tv" value="192.168.100.8" placeholder="IP TV">
         </div>
         
         <button onclick="conectarWebSocket()">Conectar a TV</button>
@@ -73,15 +79,25 @@
     const canvasCtx = canvasElement.getContext('2d');
     const estadoConexion = document.getElementById('estado-conexion');
     const selectorCamara = document.getElementById('selector-camara');
+    const selectorJugador = document.getElementById('selector-jugador');
     
     let ws = null;
     let cameraInstance = null;
+    let wakeLock = null;
     let ultimasCoordenadasMano = { x: 0, y: 0, tiempo: Date.now() };
 
     const FACTOR_SENSIBILIDAD_X = 2.5;
     let posXFiltrada = 0.5;
 
-    // Listar las cámaras disponibles en el celular (trasera, frontal, etc.)
+    // EVITAR QUE LA PANTALLA SE APAGUE (Wake Lock API)
+    async function activarPantallaEncendida() {
+        try {
+            if ('wakeLock' in navigator) {
+                wakeLock = await navigator.wakeLock.request('screen');
+            }
+        } catch (err) {}
+    }
+
     async function listarCamaras() {
         try {
             await navigator.mediaDevices.getUserMedia({ video: true });
@@ -99,22 +115,16 @@
             if (videoDispositivos.length > 0) {
                 iniciarCamara(videoDispositivos[0].deviceId);
             }
-        } catch (e) {
-            alert("No se pudo acceder a las cámaras. Verificá los permisos.");
-        }
+        } catch (e) {}
     }
 
     function cambiarCamara() {
         const deviceId = selectorCamara.value;
-        if (deviceId) {
-            iniciarCamara(deviceId);
-        }
+        if (deviceId) iniciarCamara(deviceId);
     }
 
     function iniciarCamara(deviceId) {
-        if (cameraInstance) {
-            cameraInstance.stop();
-        }
+        if (cameraInstance) cameraInstance.stop();
 
         cameraInstance = new Camera(videoElement, {
             onFrame: async () => { await pose.send({image: videoElement}); },
@@ -128,13 +138,15 @@
         const ipTV = document.getElementById('ip_tv').value.trim();
         if(!ipTV) return alert("Ingresá la IP de la TV");
 
+        activarPantallaEncendida(); // Bloquea el apagado automático de pantalla
+
         estadoConexion.innerText = "Conectando a " + ipTV + "...";
         estadoConexion.style.color = "#ffcc00";
 
         ws = new WebSocket("ws://" + ipTV + ":8080");
 
         ws.onopen = () => {
-            estadoConexion.innerText = "¡Conectado exitosamente!";
+            estadoConexion.innerText = "¡Conectado como Jugador " + selectorJugador.value + "!";
             estadoConexion.style.color = "#00ff00";
         };
 
@@ -142,16 +154,6 @@
             estadoConexion.innerText = "Conexión cerrada. Verificá la IP.";
             estadoConexion.style.color = "#ff3333";
         };
-    }
-
-    function detectarColorRaqueta(x, y) {
-        if (x < 0 || y < 0 || x > canvasElement.width || y > canvasElement.height) return "azul";
-        try {
-            const pixelData = canvasCtx.getImageData(x, y, 1, 1).data;
-            const r = pixelData[0], g = pixelData[1], b = pixelData[2];
-            if (r > 160 && g > 70 && b < 90) return "naranja";
-        } catch(e) {}
-        return "azul";
     }
 
     const pose = new Pose({
@@ -198,7 +200,11 @@
 
             const drawX = posXFiltrada * canvasElement.width;
             const drawY = canvasElement.height / 2;
-            canvasCtx.strokeStyle = "#ffffff";
+            
+            const nroJugador = parseInt(selectorJugador.value);
+            const colorJugador = nroJugador === 1 ? "#0088ff" : "#ff6600";
+
+            canvasCtx.strokeStyle = colorJugador;
             canvasCtx.lineWidth = 5;
             
             canvasCtx.beginPath();
@@ -207,11 +213,9 @@
             canvasCtx.lineTo(drawX, drawY + 35);
             canvasCtx.stroke();
 
-            const colorRaqueta = detectarColorRaqueta(muñecaDer.x * canvasElement.width, muñecaDer.y * canvasElement.height);
-
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
-                    raqueta: colorRaqueta,
+                    jugador: nroJugador,
                     x: Number(posXFiltrada.toFixed(3)),
                     y: Number(posY.toFixed(3)),
                     golpe: golpe
@@ -221,7 +225,6 @@
         canvasCtx.restore();
     }
 
-    // Iniciar la detección de cámaras al cargar
     listarCamaras();
 </script>
 </body>
