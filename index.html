@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Controlador Squash Pong 3D</title>
     
-    <!-- Librerías de MediaPipe y Camera Utils -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
 
@@ -29,7 +28,7 @@
         }
         #panel-control { margin-top: 15px; text-align: center; width: 90vw; max-width: 640px; }
         input {
-            padding: 10px; width: 50%; border-radius: 5px;
+            padding: 10px; width: 40%; border-radius: 5px;
             border: 1px solid #555; background-color: #222; color: white; text-align: center;
         }
         button {
@@ -49,7 +48,7 @@
     </div>
 
     <div id="panel-control">
-        <input type="text" id="ip_tv" value="192.168.100.8" placeholder="IP TV (ej: 192.168.100.8)">
+        <input type="text" id="ip_tv" value="192.168.100.8" placeholder="IP TV">
         <button onclick="conectarWebSocket()">Conectar a TV</button>
         <div id="estado-conexion">Desconectado de la TV</div>
     </div>
@@ -63,9 +62,13 @@
     let ws = null;
     let ultimasCoordenadasMano = { x: 0, y: 0, tiempo: Date.now() };
 
+    // VARIABLES DE SENSIBILIDAD Y CALIBRACIÓN
+    const FACTOR_SENSIBILIDAD_X = 2.5; // Multiplica los pasos laterales (Aumentar si se mueve poco)
+    let posXFiltrada = 0.5; // Para movimiento fluido
+
     function conectarWebSocket() {
         const ipTV = document.getElementById('ip_tv').value.trim();
-        if(!ipTV) return alert("Ingresá la IP de la Android TV");
+        if(!ipTV) return alert("Ingresá la IP de la TV");
 
         estadoConexion.innerText = "Conectando a " + ipTV + "...";
         estadoConexion.style.color = "#ffcc00";
@@ -125,10 +128,23 @@
             const p = results.poseLandmarks;
             const hombroIzq = p[11], hombroDer = p[12], muñecaDer = p[16];
 
-            const posX = (hombroIzq.x + hombroDer.x) / 2;
-            const anchoHombros = Math.hypot(hombroIzq.x - hombroDer.x, hombroIzq.y - hombroDer.y);
-            const posY = Math.min(Math.max((anchoHombros - 0.12) / 0.30, 0), 1);
+            // 1. Calculamos el centro actual del cuerpo en X (0.0 a 1.0)
+            const centroX_Bruto = (hombroIzq.x + hombroDer.x) / 2;
 
+            // 2. Aplicamos la Sensibilidad: Amplificamos la distancia desde el centro (0.5)
+            let posX_Calculada = 0.5 + (centroX_Bruto - 0.5) * FACTOR_SENSIBILIDAD_X;
+            
+            // Limitamos que no se salga del rango 0 a 1
+            posX_Calculada = Math.max(0.0, Math.min(1.0, posX_Calculada));
+
+            // 3. Filtro de suavizado Lerp (Evita saltos bruscos)
+            posXFiltrada = posXFiltrada + (posX_Calculada - posXFiltrada) * 0.3;
+
+            // Profundidad (Acercarse/Alejarse)
+            const anchoHombros = Math.hypot(hombroIzq.x - hombroDer.x, hombroIzq.y - hombroDer.y);
+            const posY = Math.min(Math.max((anchoHombros - 0.10) / 0.25, 0), 1);
+
+            // Detección de Golpe por velocidad de la mano
             const ahora = Date.now();
             const dt = (ahora - ultimasCoordenadasMano.tiempo) / 1000;
             const velocidadManoY = (ultimasCoordenadasMano.y - muñecaDer.y) / (dt || 0.001);
@@ -136,7 +152,8 @@
 
             ultimasCoordenadasMano = { x: muñecaDer.x, y: muñecaDer.y, tiempo: ahora };
 
-            const drawX = posX * canvasElement.width;
+            // Dibujar Monigote en la pantalla del celular
+            const drawX = posXFiltrada * canvasElement.width;
             const drawY = canvasElement.height / 2;
             canvasCtx.strokeStyle = "#ffffff";
             canvasCtx.lineWidth = 5;
@@ -149,10 +166,11 @@
 
             const colorRaqueta = detectarColorRaqueta(muñecaDer.x * canvasElement.width, muñecaDer.y * canvasElement.height);
 
+            // Enviar datos calibrados a la TV
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
                     raqueta: colorRaqueta,
-                    x: Number(posX.toFixed(3)),
+                    x: Number(posXFiltrada.toFixed(3)),
                     y: Number(posY.toFixed(3)),
                     golpe: golpe
                 }));
