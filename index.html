@@ -60,7 +60,7 @@
                 <option value="1">Jugador 1 (Azul)</option>
                 <option value="2">Jugador 2 (Naranja)</option>
             </select>
-            <input type="text" id="ip_tv" value="192.168.100.8" placeholder="IP TV">
+            <input type="text" id="ip_tv" value="192.168.100.7" placeholder="IP TV (ej: 192.168.100.7)">
         </div>
 
         <div class="fina-linea">
@@ -89,7 +89,6 @@
     const FACTOR_SENSIBILIDAD_X = 2.5;
     let posXFiltrada = 0.5;
 
-    // EVITAR QUE LA PANTALLA SE APAGUE (Wake Lock API)
     async function activarPantallaEncendida() {
         try {
             if ('wakeLock' in navigator) {
@@ -138,7 +137,7 @@
         const ipTV = document.getElementById('ip_tv').value.trim();
         if(!ipTV) return alert("Ingresá la IP de la TV");
 
-        activarPantallaEncendida(); // Bloquea el apagado automático de pantalla
+        activarPantallaEncendida();
 
         estadoConexion.innerText = "Conectando a " + ipTV + "...";
         estadoConexion.style.color = "#ffcc00";
@@ -182,14 +181,18 @@
             const p = results.poseLandmarks;
             const hombroIzq = p[11], hombroDer = p[12], muñecaDer = p[16];
 
-            const centroX_Bruto = (hombroIzq.x + hombroDer.x) / 2;
+            // 1. INVERSIÓN DEL EJE X (Dirección Izquierda / Derecha)
+            // Se calcula 1.0 - centroX para que al moverte a la izquierda en el living, el personaje vaya a la izquierda.
+            const centroX_Bruto = 1.0 - ((hombroIzq.x + hombroDer.x) / 2);
             let posX_Calculada = 0.5 + (centroX_Bruto - 0.5) * FACTOR_SENSIBILIDAD_X;
             posX_Calculada = Math.max(0.0, Math.min(1.0, posX_Calculada));
 
             posXFiltrada = posXFiltrada + (posX_Calculada - posXFiltrada) * 0.3;
 
+            // 2. INVERSIÓN DEL EJE Y (Profundidad Adelante / Atrás)
+            // Al avanzar hacia la tele, anchoHombros crece -> posY disminuye -> avanza hacia la pared superior.
             const anchoHombros = Math.hypot(hombroIzq.x - hombroDer.x, hombroIzq.y - hombroDer.y);
-            const posY = Math.min(Math.max((anchoHombros - 0.10) / 0.25, 0), 1);
+            let posY = 1.0 - Math.min(Math.max((anchoHombros - 0.10) / 0.25, 0), 1);
 
             const ahora = Date.now();
             const dt = (ahora - ultimasCoordenadasMano.tiempo) / 1000;
