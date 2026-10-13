@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Controlador Pong Sports</title>
+    <title>Controlador Pong Sports Multi-Juego</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
@@ -61,14 +61,15 @@
                 <option value="squash">Squash Pong</option>
                 <option value="box">Box Pong (Boxeo)</option>
             </select>
-            <!-- JUGADOR -->
+            <!-- SELECCIONAR JUGADOR -->
             <select id="selector-jugador">
-                <option value="1">Jugador 1 (Rojo/Azul)</option>
+                <option value="1">Jugador 1 (Azul / Rojo)</option>
                 <option value="2">Jugador 2 (Naranja)</option>
             </select>
         </div>
 
         <div class="fina-linea">
+            <!-- SELECTOR DE CÁMARAS (TRASERA / FRONTAL) -->
             <select id="selector-camara" onchange="cambiarCamara()">
                 <option value="">Cargando cámaras...</option>
             </select>
@@ -76,7 +77,7 @@
         </div>
         
         <button onclick="conectarWebSocket()">Conectar a TV</button>
-        <div id="estado-conexion">Desconectado</div>
+        <div id="estado-conexion">Desconectado de la TV</div>
     </div>
 
 <script>
@@ -91,17 +92,19 @@
     let ws = null;
     let cameraInstance = null;
     let wakeLock = null;
-    let ultimosLandmarks = null;
+    let ultimasCoordenadasMano = { y: 0, tiempo: Date.now() };
 
     const FACTOR_SENSIBILIDAD_X = 2.5;
     let posXFiltrada = 0.5;
 
+    // EVITAR APAGADO DE PANTALLA
     async function activarPantallaEncendida() {
         try {
             if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
         } catch (err) {}
     }
 
+    // LISTAR CÁMARAS
     async function listarCamaras() {
         try {
             await navigator.mediaDevices.getUserMedia({ video: true });
@@ -149,7 +152,7 @@
         };
 
         ws.onclose = () => {
-            estadoConexion.innerText = "Conexión cerrada.";
+            estadoConexion.innerText = "Conexión cerrada. Verificá la IP.";
             estadoConexion.style.color = "#ff3333";
         };
     }
@@ -183,32 +186,34 @@
             const tobilloDer = p[28], tobilloIzq = p[27];
             const caderaDer = p[24], caderaIzq = p[23];
 
-            // Posición X e Y del torso
+            // 1. INVERSIÓN Y SENSIBILIDAD DEL EJE X
             const centroX_Bruto = 1.0 - ((hombroIzq.x + hombroDer.x) / 2);
             let posX_Calculada = 0.5 + (centroX_Bruto - 0.5) * FACTOR_SENSIBILIDAD_X;
             posX_Calculada = Math.max(0.0, Math.min(1.0, posX_Calculada));
             posXFiltrada = posXFiltrada + (posX_Calculada - posXFiltrada) * 0.3;
 
+            // 2. PROFUNDIDAD (EJE Y)
             const anchoHombros = Math.hypot(hombroIzq.x - hombroDer.x, hombroIzq.y - hombroDer.y);
             let posY = 1.0 - Math.min(Math.max((anchoHombros - 0.10) / 0.25, 0), 1);
 
-            // DETECCIÓN DE PIÑAS Y PATADAS
-            let golpedia = 0; // 0: Ninguno, 1: Piña Mano Derecha, 2: Piña Mano Izq
-            let patada = 0;   // 0: Ninguna, 1: Patada Derecha, 2: Patada Izquierda
+            // 3. DETECCIÓN DE GOLPES Y PATADAS
+            const ahora = Date.now();
+            const dt = (ahora - ultimasCoordenadasMano.tiempo) / 1000;
+            const velocidadManoY = (ultimasCoordenadasMano.y - muñecaDer.y) / (dt || 0.001);
+            
+            let golpe = velocidadManoY > 1.2 ? 1 : 0;
+            if (muñecaDer.y < hombroDer.y || muñecaIzq.y < hombroIzq.y) golpe = 1;
 
-            // Detección de piña (Muñecas extendidas por delante del torso o por encima del hombro)
-            if (muñecaDer.y < hombroDer.y || Math.abs(muñecaDer.x - hombroDer.x) > 0.25) golpedia = 1;
-            if (muñecaIzq.y < hombroIzq.y || Math.abs(muñecaIzq.x - hombroIzq.x) > 0.25) golpedia = 2;
-
-            // Detección de patada (Tobillos levantados respecto a la cadera)
+            let patada = 0;
             const caderaMediaY = (caderaDer.y + caderaIzq.y) / 2;
-            if (tobilloDer.y < caderaMediaY + 0.15) patada = 1;
-            if (tobilloIzq.y < caderaMediaY + 0.15) patada = 2;
+            if (tobilloDer.y < caderaMediaY + 0.18 || tobilloIzq.y < caderaMediaY + 0.18) patada = 1;
 
-            // Dibujo de silueta básica en la pantalla del celular
+            ultimasCoordenadasMano = { y: muñecaDer.y, tiempo: ahora };
+
+            // Dibujo de silueta en cel
             const drawX = posXFiltrada * canvasElement.width;
             const drawY = canvasElement.height / 2;
-            canvasCtx.strokeStyle = selectorJugador.value === "1" ? "#ff3333" : "#ff9900";
+            canvasCtx.strokeStyle = selectorJugador.value === "1" ? "#0088ff" : "#ff6600";
             canvasCtx.lineWidth = 4;
             canvasCtx.beginPath();
             canvasCtx.arc(drawX, drawY - 30, 15, 0, 2 * Math.PI);
@@ -222,7 +227,7 @@
                     jugador: parseInt(selectorJugador.value),
                     x: Number(posXFiltrada.toFixed(3)),
                     y: Number(posY.toFixed(3)),
-                    golpe: golpedia,
+                    golpe: golpe,
                     patada: patada
                 }));
             }
