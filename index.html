@@ -63,11 +63,11 @@
     </div>
 
     <div id="panel-control">
-        <!-- BOTONERA DE JUEGOS -->
+        <!-- BOTONERA DE MODO DE JUEGO -->
         <div class="fina-linea">
             <button class="boton-modo btn-squash" onclick="seleccionarModo('squash')">🎾 SQUASH</button>
             <button class="boton-modo btn-box" onclick="seleccionarModo('box')">🥊 BOX</button>
-            <button class="boton-modo btn-zombie" onclick="seleccionarModo('zombie')">🧟 ZOMBIE</button>
+            <button class="boton-modo btn-zombie" onclick="seleccionarModo('zombie')">🧟 ZOMBIES</button>
         </div>
         <button class="boton-modo btn-menu" onclick="seleccionarModo('menu')">🏠 MENÚ PRINCIPAL</button>
 
@@ -101,9 +101,9 @@
     let cameraInstance = null;
     let wakeLock = null;
     let modoActualSeleccionado = "menu";
-    let ultimasCoordenadasMano = { y: 0, tiempo: Date.now() };
+    let ultimasCoordenadasMano = { y: 0, x: 0, tiempo: Date.now() };
 
-    const FACTOR_SENSIBILIDAD_X = 2.0; // Sensibilidad calibrada
+    const FACTOR_SENSIBILIDAD_X = 2.0;
     let posXFiltrada = 0.5;
 
     async function activarPantallaEncendida() {
@@ -204,26 +204,30 @@
             const tobilloDer = p[28], tobilloIzq = p[27];
             const caderaDer = p[24], caderaIzq = p[23];
 
+            // 1. Inversión del Eje X
             const centroX_Bruto = 1.0 - ((hombroIzq.x + hombroDer.x) / 2);
             let posX_Calculada = 0.5 + (centroX_Bruto - 0.5) * FACTOR_SENSIBILIDAD_X;
             posX_Calculada = Math.max(0.0, Math.min(1.0, posX_Calculada));
             posXFiltrada = posXFiltrada + (posX_Calculada - posXFiltrada) * 0.2;
 
+            // 2. Profundidad (Eje Y)
             const anchoHombros = Math.hypot(hombroIzq.x - hombroDer.x, hombroIzq.y - hombroDer.y);
             let posY = 1.0 - Math.min(Math.max((anchoHombros - 0.10) / 0.25, 0), 1);
 
+            // 3. Detección de Gestos (Golpe / Disparo / Retroceso)
             const ahora = Date.now();
             const dt = (ahora - ultimasCoordenadasMano.tiempo) / 1000;
-            const velocidadManoY = (ultimasCoordenadasMano.y - muñecaDer.y) / (dt || 0.001);
+            const velY = Math.abs(muñecaDer.y - ultimasCoordenadasMano.y) / (dt || 0.001);
+            const velX = Math.abs(muñecaDer.x - ultimasCoordenadasMano.x) / (dt || 0.001);
             
-            let golpe = velocidadManoY > 1.2 ? 1 : 0;
+            let golpe = (velY > 1.2 || velX > 1.2) ? 1 : 0;
             if (muñecaDer.y < hombroDer.y || muñecaIzq.y < hombroIzq.y) golpe = 1;
 
             let patada = 0;
             const caderaMediaY = (caderaDer.y + caderaIzq.y) / 2;
             if (tobilloDer.y < caderaMediaY + 0.18 || tobilloIzq.y < caderaMediaY + 0.18) patada = 1;
 
-            ultimasCoordenadasMano = { y: muñecaDer.y, tiempo: ahora };
+            ultimasCoordenadasMano = { y: muñecaDer.y, x: muñecaDer.x, tiempo: ahora };
 
             const drawX = posXFiltrada * canvasElement.width;
             const drawY = canvasElement.height / 2;
