@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Controlador Pong Sports Multi-Juego</title>
+    <title>Controlador Pong Arcade</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
@@ -14,11 +14,12 @@
             background-color: #121212; color: #ffffff;
             font-family: Arial, sans-serif;
             display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
+            align-items: center; justify-content: flex-start;
             height: 100vh; overflow: hidden;
+            box-sizing: border-box; padding-top: 10px;
         }
         #contenedor-camara {
-            position: relative; width: 90vw; max-width: 640px; height: 38vh;
+            position: relative; width: 90vw; max-width: 640px; height: 32vh;
             border: 3px solid #333; border-radius: 10px; background-color: #000;
         }
         video { display: none; }
@@ -28,9 +29,9 @@
         }
         #panel-control { 
             margin-top: 8px; text-align: center; width: 90vw; max-width: 640px; 
-            display: flex; flex-direction: column; gap: 6px; align-items: center;
+            display: flex; flex-direction: column; gap: 8px; align-items: center;
         }
-        .fina-linea { display: flex; gap: 6px; justify-content: center; width: 100%; }
+        .fina-linea { display: flex; gap: 8px; justify-content: center; width: 100%; }
         input, select {
             padding: 8px; border-radius: 5px;
             border: 1px solid #555; background-color: #222; color: white; text-align: center;
@@ -38,16 +39,22 @@
         }
         input { width: 45%; }
         select { width: 45%; }
-        button {
-            padding: 10px 15px; background-color: #00ffcc; color: black;
-            border: none; border-radius: 5px; font-weight: bold; cursor: pointer; width: 90%;
+        
+        .boton-modo {
+            padding: 12px; font-size: 14px; font-weight: bold; border-radius: 6px;
+            border: none; cursor: pointer; width: 48%; color: white;
         }
+        .btn-squash { background-color: #0088ff; }
+        .btn-box { background-color: #ff3333; }
+        .btn-menu { background-color: #555555; width: 98%; }
+        .btn-conectar { background-color: #00ffcc; color: black; font-weight: bold; width: 98%; padding: 10px; border: none; border-radius: 5px;}
+        
         #estado-conexion { font-size: 12px; color: #ff3333; }
     </style>
 </head>
 <body>
 
-    <h3 style="margin: 5px 0;">CONTROL MULTIDEPORTES</h3>
+    <h3 style="margin: 2px 0;">PONG SPORTS ARCADE</h3>
     
     <div id="contenedor-camara">
         <video id="webcam" autoplay playsinline></video>
@@ -55,28 +62,28 @@
     </div>
 
     <div id="panel-control">
+        <!-- BOTONERA DE ELECCIÓN DE JUEGO -->
         <div class="fina-linea">
-            <!-- MODO DE JUEGO -->
-            <select id="selector-modo">
-                <option value="squash">Squash Pong</option>
-                <option value="box">Box Pong (Boxeo)</option>
-            </select>
-            <!-- SELECCIONAR JUGADOR -->
+            <button class="boton-modo btn-squash" onclick="seleccionarModo('squash')">🎾 SQUASH</button>
+            <button class="boton-modo btn-box" onclick="seleccionarModo('box')">🥊 BOX PONG</button>
+        </div>
+        <button class="boton-modo btn-menu" onclick="seleccionarModo('menu')">🏠 MENÚ PRINCIPAL</button>
+
+        <div class="fina-linea">
             <select id="selector-jugador">
                 <option value="1">Jugador 1 (Azul / Rojo)</option>
                 <option value="2">Jugador 2 (Naranja)</option>
             </select>
-        </div>
-
-        <div class="fina-linea">
-            <!-- SELECTOR DE CÁMARAS (TRASERA / FRONTAL) -->
             <select id="selector-camara" onchange="cambiarCamara()">
                 <option value="">Cargando cámaras...</option>
             </select>
+        </div>
+
+        <div class="fina-linea">
             <input type="text" id="ip_tv" value="192.168.100.7" placeholder="IP TV">
+            <button class="btn-conectar" onclick="conectarWebSocket()">Conectar TV</button>
         </div>
         
-        <button onclick="conectarWebSocket()">Conectar a TV</button>
         <div id="estado-conexion">Desconectado de la TV</div>
     </div>
 
@@ -87,24 +94,22 @@
     const estadoConexion = document.getElementById('estado-conexion');
     const selectorCamara = document.getElementById('selector-camara');
     const selectorJugador = document.getElementById('selector-jugador');
-    const selectorModo = document.getElementById('selector-modo');
     
     let ws = null;
     let cameraInstance = null;
     let wakeLock = null;
+    let modoActualSeleccionado = "menu";
     let ultimasCoordenadasMano = { y: 0, tiempo: Date.now() };
 
     const FACTOR_SENSIBILIDAD_X = 2.5;
     let posXFiltrada = 0.5;
 
-    // EVITAR APAGADO DE PANTALLA
     async function activarPantallaEncendida() {
         try {
             if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
         } catch (err) {}
     }
 
-    // LISTAR CÁMARAS
     async function listarCamaras() {
         try {
             await navigator.mediaDevices.getUserMedia({ video: true });
@@ -136,6 +141,16 @@
         cameraInstance.start();
     }
 
+    function seleccionarModo(modo) {
+        modoActualSeleccionado = modo;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                comando: "CAMBIAR_MODO",
+                modo: modo
+            }));
+        }
+    }
+
     function conectarWebSocket() {
         const ipTV = document.getElementById('ip_tv').value.trim();
         if(!ipTV) return alert("Ingresá la IP de la TV");
@@ -147,8 +162,9 @@
         ws = new WebSocket("ws://" + ipTV + ":8080");
 
         ws.onopen = () => {
-            estadoConexion.innerText = "¡Conectado como J" + selectorJugador.value + " (" + selectorModo.value.toUpperCase() + ")!";
+            estadoConexion.innerText = "¡Conectado como J" + selectorJugador.value + "!";
             estadoConexion.style.color = "#00ff00";
+            seleccionarModo(modoActualSeleccionado);
         };
 
         ws.onclose = () => {
@@ -186,17 +202,14 @@
             const tobilloDer = p[28], tobilloIzq = p[27];
             const caderaDer = p[24], caderaIzq = p[23];
 
-            // 1. INVERSIÓN Y SENSIBILIDAD DEL EJE X
             const centroX_Bruto = 1.0 - ((hombroIzq.x + hombroDer.x) / 2);
             let posX_Calculada = 0.5 + (centroX_Bruto - 0.5) * FACTOR_SENSIBILIDAD_X;
             posX_Calculada = Math.max(0.0, Math.min(1.0, posX_Calculada));
             posXFiltrada = posXFiltrada + (posX_Calculada - posXFiltrada) * 0.3;
 
-            // 2. PROFUNDIDAD (EJE Y)
             const anchoHombros = Math.hypot(hombroIzq.x - hombroDer.x, hombroIzq.y - hombroDer.y);
             let posY = 1.0 - Math.min(Math.max((anchoHombros - 0.10) / 0.25, 0), 1);
 
-            // 3. DETECCIÓN DE GOLPES Y PATADAS
             const ahora = Date.now();
             const dt = (ahora - ultimasCoordenadasMano.tiempo) / 1000;
             const velocidadManoY = (ultimasCoordenadasMano.y - muñecaDer.y) / (dt || 0.001);
@@ -210,7 +223,6 @@
 
             ultimasCoordenadasMano = { y: muñecaDer.y, tiempo: ahora };
 
-            // Dibujo de silueta en cel
             const drawX = posXFiltrada * canvasElement.width;
             const drawY = canvasElement.height / 2;
             canvasCtx.strokeStyle = selectorJugador.value === "1" ? "#0088ff" : "#ff6600";
@@ -223,7 +235,7 @@
 
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
-                    modo: selectorModo.value,
+                    modo: modoActualSeleccionado,
                     jugador: parseInt(selectorJugador.value),
                     x: Number(posXFiltrada.toFixed(3)),
                     y: Number(posY.toFixed(3)),
