@@ -31,7 +31,7 @@
             margin-top: 6px; text-align: center; width: 90vw; max-width: 640px; 
             display: flex; flex-direction: column; gap: 6px; align-items: center;
         }
-        .fina-linea { display: flex; gap: 6px; justify-content: center; width: 100%; }
+        .fina-linea { display: flex; gap: 4px; justify-content: center; width: 100%; }
         input, select {
             padding: 8px; border-radius: 5px;
             border: 1px solid #555; background-color: #222; color: white; text-align: center;
@@ -41,13 +41,14 @@
         select { width: 45%; }
         
         .boton-modo {
-            padding: 10px; font-size: 13px; font-weight: bold; border-radius: 6px;
+            padding: 8px; font-size: 11px; font-weight: bold; border-radius: 6px;
             border: none; cursor: pointer; color: white; flex: 1;
         }
         .btn-squash { background-color: #0088ff; }
         .btn-box { background-color: #ff3333; }
         .btn-zombie { background-color: #00cc44; }
-        .btn-accion { background-color: #ffcc00; color: black; width: 98%; padding: 10px; font-weight: bold; border-radius: 5px; border: none; font-size: 14px;}
+        .btn-futbol { background-color: #ffaa00; color: black; }
+        .btn-accion { background-color: #ffcc00; color: black; width: 98%; padding: 10px; font-weight: bold; border-radius: 5px; border: none; font-size: 13px;}
         .btn-menu { background-color: #555555; width: 98%; }
         .btn-conectar { background-color: #00ffcc; color: black; font-weight: bold; width: 98%; padding: 10px; border: none; border-radius: 5px;}
         
@@ -68,6 +69,7 @@
             <button class="boton-modo btn-squash" onclick="seleccionarModo('squash')">🎾 SQUASH</button>
             <button class="boton-modo btn-box" onclick="seleccionarModo('box')">🥊 BOX</button>
             <button class="boton-modo btn-zombie" onclick="seleccionarModo('zombie')">🧟 ZOMBIES</button>
+            <button class="boton-modo btn-futbol" onclick="seleccionarModo('futbol')">⚽ FÚTBOL</button>
         </div>
         
         <button class="btn-accion" onclick="activarBotonAccion()">🚀 INICIAR / SIGUIENTE NIVEL</button>
@@ -106,6 +108,7 @@
 
     const FACTOR_SENSIBILIDAD_X = 2.0;
     let posXFiltrada = 0.5;
+    let alturaBaseCabeza = 0.0;
 
     async function activarPantallaEncendida() {
         try {
@@ -209,6 +212,7 @@
 
         if (results.poseLandmarks) {
             const p = results.poseLandmarks;
+            const nariz = p[0];
             const hombroIzq = p[11], hombroDer = p[12];
             const codoDer = p[14], codoIzq = p[13];
             const muñecaDer = p[16], muñecaIzq = p[15];
@@ -222,28 +226,27 @@
             posX_Calculada = Math.max(0.0, Math.min(1.0, posX_Calculada));
             posXFiltrada = posXFiltrada + (posX_Calculada - posXFiltrada) * 0.2;
 
-            // 2. Profundidad (Eje Y)
-            const anchoHombros = Math.hypot(hombroIzq.x - hombroDer.x, hombroIzq.y - hombroDer.y);
-            let posY = 1.0 - Math.min(Math.max((anchoHombros - 0.10) / 0.25, 0), 1);
+            // 2. Detección de Salto (Eje Y Cabeza)
+            if (alturaBaseCabeza === 0.0) alturaBaseCabeza = nariz.y;
+            else alturaBaseCabeza = alturaBaseCabeza * 0.98 + nariz.y * 0.02;
+            let salto = (alturaBaseCabeza - nariz.y > 0.06) ? 1 : 0;
 
-            // 3. APUNTADO CORRECTO (Inversión de Espejo para Dirección)
-            // Calculamos hacia dónde apunta la mano del usuario respecto a su cuerpo
-            let manoDominanteX = 1.0 - muñecaDer.x; // Corregido el efecto espejo
-            let cuerpoX = centroX_Bruto;
-            let dirApuntado = (manoDominanteX >= cuerpoX) ? 1.0 : -1.0;
+            // 3. Dirección de Apuntado (Inversión para Espejo)
+            let manoDominanteX = 1.0 - muñecaDer.x;
+            let dirApuntado = (manoDominanteX >= centroX_Bruto) ? 1.0 : -1.0;
 
-            // 4. DISPARO CONTINUO
+            // 4. Disparo / Patada
             let disparo = 0;
             if (muñecaDer.y < hombroDer.y + 0.10 || muñecaIzq.y < hombroIzq.y + 0.10 ||
                 muñecaDer.y < codoDer.y + 0.08 || muñecaIzq.y < codoIzq.y + 0.08) {
                 disparo = 1;
             }
 
-            // 5. PATADA
             let patada = 0;
             const caderaMediaY = (caderaDer.y + caderaIzq.y) / 2;
             if (tobilloDer.y < caderaMediaY + 0.28 || tobilloIzq.y < caderaMediaY + 0.28 ||
-                rodillaDer.y < caderaMediaY + 0.15 || rodillaIzq.y < caderaMediaY + 0.15) {
+                rodillaDer.y < caderaMediaY + 0.15 || rodillaIzq.y < caderaMediaY + 0.15 ||
+                muñecaDer.y < hombroDer.y || muñecaIzq.y < hombroIzq.y) {
                 patada = 1;
             }
 
@@ -252,9 +255,9 @@
             canvasCtx.strokeStyle = selectorJugador.value === "1" ? "#0088ff" : "#ff6600";
             canvasCtx.lineWidth = 4;
             canvasCtx.beginPath();
-            canvasCtx.arc(drawX, drawY - 30, 15, 0, 2 * Math.PI);
-            canvasCtx.moveTo(drawX, drawY - 15);
-            canvasCtx.lineTo(drawX, drawY + 30);
+            canvasCtx.arc(drawX, drawY - (salto ? 50 : 30), 15, 0, 2 * Math.PI);
+            canvasCtx.moveTo(drawX, drawY - (salto ? 35 : 15));
+            canvasCtx.lineTo(drawX, drawY + (salto ? 10 : 30));
             
             if (patada === 1) {
                 canvasCtx.lineTo(drawX + (25 * dirApuntado), drawY + 15);
@@ -266,8 +269,8 @@
                     modo: modoActualSeleccionado,
                     jugador: parseInt(selectorJugador.value),
                     x: Number(posXFiltrada.toFixed(3)),
-                    y: Number(posY.toFixed(3)),
-                    dir_apuntado: dirApuntado, // Dirección corregida enviada a Godot
+                    salto: salto,
+                    dir_apuntado: dirApuntado,
                     golpe: disparo,
                     patada: patada
                 }));
