@@ -64,14 +64,12 @@
     </div>
 
     <div id="panel-control">
-        <!-- BOTONERA DE JUEGOS -->
         <div class="fina-linea">
             <button class="boton-modo btn-squash" onclick="seleccionarModo('squash')">🎾 SQUASH</button>
             <button class="boton-modo btn-box" onclick="seleccionarModo('box')">🥊 BOX</button>
             <button class="boton-modo btn-zombie" onclick="seleccionarModo('zombie')">🧟 ZOMBIES</button>
         </div>
         
-        <!-- BOTÓN DE ACCIÓN / SIGUIENTE NIVEL -->
         <button class="btn-accion" onclick="activarBotonAccion()">🚀 INICIAR / SIGUIENTE NIVEL</button>
         <button class="boton-modo btn-menu" onclick="seleccionarModo('menu')">🏠 MENÚ PRINCIPAL</button>
 
@@ -105,7 +103,6 @@
     let cameraInstance = null;
     let wakeLock = null;
     let modoActualSeleccionado = "menu";
-    let ultimasCoordenadasMano = { y: 0, x: 0, tiempo: Date.now() };
 
     const FACTOR_SENSIBILIDAD_X = 2.0;
     let posXFiltrada = 0.5;
@@ -216,6 +213,7 @@
             const codoDer = p[14], codoIzq = p[13];
             const muñecaDer = p[16], muñecaIzq = p[15];
             const tobilloDer = p[28], tobilloIzq = p[27];
+            const rodillaDer = p[26], rodillaIzq = p[25];
             const caderaDer = p[24], caderaIzq = p[23];
 
             // 1. Posición Lateral (Eje X)
@@ -228,14 +226,20 @@
             const anchoHombros = Math.hypot(hombroIzq.x - hombroDer.x, hombroIzq.y - hombroDer.y);
             let posY = 1.0 - Math.min(Math.max((anchoHombros - 0.10) / 0.25, 0), 1);
 
-            // 3. DETECCIÓN DE DISPARO DIRECTO Y PATADA
-            // Dispara si cualquier mano se extiende por encima del codo o frente al torso
+            // 3. DETECCIÓN DE APUNTADO Y DISPARO CONTINUO (Mano arriba o brazos extendidos)
             let disparo = 0;
-            if (muñecaDer.y < codoDer.y + 0.05 || muñecaIzq.y < codoIzq.y + 0.05) disparo = 1;
+            if (muñecaDer.y < hombroDer.y + 0.10 || muñecaIzq.y < hombroIzq.y + 0.10 ||
+                muñecaDer.y < codoDer.y + 0.08 || muñecaIzq.y < codoIzq.y + 0.08) {
+                disparo = 1; // Se mantiene en 1 mientras la mano esté alzada
+            }
 
+            // 4. DETECCIÓN MEJORADA DE PATADA (Cualquier elevación de pie o rodilla)
             let patada = 0;
             const caderaMediaY = (caderaDer.y + caderaIzq.y) / 2;
-            if (tobilloDer.y < caderaMediaY + 0.18 || tobilloIzq.y < caderaMediaY + 0.18) patada = 1;
+            if (tobilloDer.y < caderaMediaY + 0.28 || tobilloIzq.y < caderaMediaY + 0.28 ||
+                rodillaDer.y < caderaMediaY + 0.15 || rodillaIzq.y < caderaMediaY + 0.15) {
+                patada = 1;
+            }
 
             const drawX = posXFiltrada * canvasElement.width;
             const drawY = canvasElement.height / 2;
@@ -245,6 +249,10 @@
             canvasCtx.arc(drawX, drawY - 30, 15, 0, 2 * Math.PI);
             canvasCtx.moveTo(drawX, drawY - 15);
             canvasCtx.lineTo(drawX, drawY + 30);
+            
+            if (patada === 1) {
+                canvasCtx.lineTo(drawX + 25, drawY + 15); // Pierna de patada en preview
+            }
             canvasCtx.stroke();
 
             if (ws && ws.readyState === WebSocket.OPEN) {
