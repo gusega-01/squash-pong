@@ -10,15 +10,18 @@
     <style>
         * { box-sizing: border-box; touch-action: manipulation; user-select: none; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #121212; color: white; margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; }
-        h2 { margin: 5px 0; font-size: 1.2rem; }
+        h2 { margin: 5px 0; font-size: 1.2rem; color: #00ffcc; }
         .setup-card { background: #1e1e1e; padding: 12px; border-radius: 10px; width: 100%; max-width: 400px; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         .form-group { display: flex; gap: 8px; margin-bottom: 8px; }
-        input, select, button { padding: 10px; border-radius: 6px; border: 1px solid #333; background: #2a2a2a; color: white; font-size: 0.9rem; }
+        .slider-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; background: #2a2a2a; padding: 8px; border-radius: 6px; }
+        .slider-label { font-size: 0.8rem; color: #ccc; display: flex; justify-content: space-between; }
+        input[type="range"] { width: 100%; accent-color: #007acc; cursor: pointer; }
+        input[type="text"], select, button { padding: 10px; border-radius: 6px; border: 1px solid #333; background: #2a2a2a; color: white; font-size: 0.9rem; }
         input[type="text"] { flex: 1; }
         button { background: #007acc; font-weight: bold; cursor: pointer; border: none; }
         button:active { background: #005999; }
         .btn-iniciar { background: #28a745; width: 100%; font-size: 1.1rem; padding: 12px; margin-top: 5px; }
-        .cam-container { position: relative; width: 100%; max-width: 400px; height: 240px; background: #000; border-radius: 10px; overflow: hidden; }
+        .cam-container { position: relative; width: 100%; max-width: 400px; height: 220px; background: #000; border-radius: 10px; overflow: hidden; }
         video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
         canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); }
         .status { position: absolute; top: 5px; left: 5px; background: rgba(0,0,0,0.7); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; color: #00ffcc; }
@@ -45,6 +48,24 @@
                 <option value="squash">Squash</option>
             </select>
         </div>
+
+        <!-- Barras de Sensibilidad -->
+        <div class="slider-group">
+            <div class="slider-label">
+                <span>Sensibilidad Desplazamiento (1-10):</span>
+                <b id="lblSensMov">5</b>
+            </div>
+            <input type="range" id="sensMov" min="1" max="10" value="5" oninput="document.getElementById('lblSensMov').innerText = this.value">
+        </div>
+
+        <div class="slider-group">
+            <div class="slider-label">
+                <span>Sensibilidad Gestos/Ataque (1-10):</span>
+                <b id="lblSensAtaque">5</b>
+            </div>
+            <input type="range" id="sensAtaque" min="1" max="10" value="5" oninput="document.getElementById('lblSensAtaque').innerText = this.value">
+        </div>
+
         <button class="btn-iniciar" id="btnAccion" onclick="enviarAccionIniciar()">TOCÁ PARA INICIAR / ACCIÓN</button>
     </div>
 
@@ -63,8 +84,9 @@
         const ipInput = document.getElementById('ip');
         const jugadorSelect = document.getElementById('jugador');
         const modoSelect = document.getElementById('modo');
+        const sensMovInput = document.getElementById('sensMov');
+        const sensAtaqueInput = document.getElementById('sensAtaque');
 
-        // Cargar IP guardada si existe
         if (localStorage.getItem('godot_ip')) {
             ipInput.value = localStorage.getItem('godot_ip');
             conectarWebSocket();
@@ -142,7 +164,11 @@
             if (results.poseLandmarks) {
                 const lm = results.poseLandmarks;
 
-                // Referencias
+                // Valores de Sensibilidad
+                const multMov = parseFloat(sensMovInput.value) / 5.0; // Factor entre 0.2 y 2.0
+                const sensGestos = parseFloat(sensAtaqueInput.value); // Valor de 1 a 10
+
+                // Puntos Clave
                 const nariz = lm[0];
                 const munecaDer = lm[16];
                 const munecaIzq = lm[15];
@@ -151,36 +177,35 @@
                 const caderaDer = lm[24];
                 const caderaIzq = lm[23];
 
-                // Calculo Posicion X (Cuerpo)
-                const posX = 1.0 - nariz.x; // Invertido por espejo
+                // Posición X Calibrada por Sensibilidad de Movimiento
+                let posX = 1.0 - nariz.x;
+                posX = 0.5 + (posX - 0.5) * multMov;
+                posX = Math.min(Math.max(posX, 0.0), 1.0);
 
-                // Distancia a la cámara (profundidad para Zombies)
+                // Profundidad
                 const anchoHombros = Math.abs(lm[11].x - lm[12].x);
                 const distanciaCamara = Math.min(Math.max(anchoHombros * 2.5, 0.1), 1.0);
 
-                // Detección Golpe (Mano extendida frente a la cámara o elevada)
-                const golpe = (munecaDer.y < lm[12].y - 0.1) || (munecaIzq.y < lm[11].y - 0.1);
+                // Umbral de Ataque según Sensibilidad (Entre más alto el valor, más fácil se activa)
+                const umbralGolpe = 0.25 - (sensGestos * 0.018);
+                const umbralPatada = 0.30 - (sensGestos * 0.02);
 
-                // Detección Patada (Pie elevado cerca de la cadera)
+                const golpe = (munecaDer.y < lm[12].y - umbralGolpe) || (munecaIzq.y < lm[11].y - umbralGolpe);
+
                 const caderaY = (caderaDer.y + caderaIzq.y) / 2.0;
-                const patadaPie = (tobilloDer.y < caderaY + 0.15) || (tobilloIzq.y < caderaY + 0.15);
+                const patadaPie = (tobilloDer.y < caderaY + umbralPatada) || (tobilloIzq.y < caderaY + umbralPatada);
 
-                // Patada Mano (Gesto especial para Fútbol)
                 const patadaMano = (munecaDer.y < nariz.y) || (munecaIzq.y < nariz.y);
-
-                // Salto (Cabeza/Nariz sube repentinamente)
-                const salto = (nariz.y < 0.3);
-
-                // Dirección Apuntado (Zombies)
+                const salto = (nariz.y < 0.28);
                 const dirApuntado = (munecaDer.x < nariz.x) ? 1.0 : -1.0;
 
-                // Dibujar Puntos Clave
+                // Dibujar Punto de Referencia
                 canvasCtx.fillStyle = '#00ffcc';
                 canvasCtx.beginPath();
                 canvasCtx.arc(nariz.x * canvasElement.width, nariz.y * canvasElement.height, 5, 0, 2 * Math.PI);
                 canvasCtx.fill();
 
-                // Enviar Datos por WebSocket
+                // Enviar Datos
                 if (socket && socket.readyState === WebSocket.OPEN) {
                     const paquete = {
                         jugador: parseInt(jugadorSelect.value),
