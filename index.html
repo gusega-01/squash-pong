@@ -10,21 +10,22 @@
     <style>
         * { box-sizing: border-box; touch-action: manipulation; user-select: none; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #121212; color: white; margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; }
-        h2 { margin: 5px 0; font-size: 1.2rem; color: #00ffcc; }
+        h2 { margin: 5px 0; font-size: 1.2rem; color: #00ffcc; text-align: center; }
         .setup-card { background: #1e1e1e; padding: 12px; border-radius: 10px; width: 100%; max-width: 400px; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         .form-group { display: flex; gap: 8px; margin-bottom: 8px; }
         .slider-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; background: #2a2a2a; padding: 8px; border-radius: 6px; }
         .slider-label { font-size: 0.8rem; color: #ccc; display: flex; justify-content: space-between; }
-        input[type="range"] { width: 100%; accent-color: #007acc; cursor: pointer; }
+        input[type="range"] { width: 100%; accent-color: #00ffcc; cursor: pointer; }
         input[type="text"], select, button { padding: 10px; border-radius: 6px; border: 1px solid #333; background: #2a2a2a; color: white; font-size: 0.9rem; }
         input[type="text"] { flex: 1; }
         button { background: #007acc; font-weight: bold; cursor: pointer; border: none; }
         button:active { background: #005999; }
+        .btn-save { background: #17a2b8; padding: 10px 12px; font-size: 0.85rem; }
         .btn-iniciar { background: #28a745; width: 100%; font-size: 1.1rem; padding: 12px; margin-top: 5px; }
-        .cam-container { position: relative; width: 100%; max-width: 400px; height: 220px; background: #000; border-radius: 10px; overflow: hidden; }
-        video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
-        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); }
-        .status { position: absolute; top: 5px; left: 5px; background: rgba(0,0,0,0.7); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; color: #00ffcc; }
+        .cam-container { position: relative; width: 100%; max-width: 400px; height: 240px; background: #000; border-radius: 10px; overflow: hidden; border: 2px solid #333; }
+        video { display: none; } /* Oculta la cámara de video real */
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); background: #000; }
+        .status { position: absolute; top: 5px; left: 5px; background: rgba(0,0,0,0.85); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; color: #00ffcc; z-index: 10; }
     </style>
 </head>
 <body>
@@ -33,17 +34,19 @@
 
     <div class="setup-card">
         <div class="form-group">
-            <input type="text" id="ip" placeholder="IP PC (Ej: 192.168.0.150)">
-            <select id="jugador">
+            <input type="text" id="ip" placeholder="IP PC (Ej: 192.168.100.8)">
+            <button class="btn-save" onclick="guardarIP()">💾 GUARDAR IP</button>
+        </div>
+
+        <div class="form-group">
+            <select id="jugador" style="width: 50%;">
                 <option value="1">Jugador 1</option>
                 <option value="2">Jugador 2</option>
             </select>
-        </div>
-        <div class="form-group">
-            <select id="modo" style="width: 100%;">
+            <select id="modo" style="width: 50%;">
                 <option value="menu">Menú Principal</option>
-                <option value="futbol">Fútbol</option>
                 <option value="kickboxing">Kickboxing Punk</option>
+                <option value="futbol">Fútbol</option>
                 <option value="zombie">Zombies</option>
                 <option value="squash">Squash</option>
             </select>
@@ -87,15 +90,23 @@
         const sensMovInput = document.getElementById('sensMov');
         const sensAtaqueInput = document.getElementById('sensAtaque');
 
-        if (localStorage.getItem('godot_ip')) {
-            ipInput.value = localStorage.getItem('godot_ip');
-            conectarWebSocket();
-        }
-
-        ipInput.addEventListener('change', () => {
-            localStorage.setItem('godot_ip', ipInput.value);
-            conectarWebSocket();
+        // Carga automática de IP guardada
+        window.addEventListener('DOMContentLoaded', () => {
+            const ipGuardada = localStorage.getItem('godot_ip');
+            if (ipGuardada) {
+                ipInput.value = ipGuardada;
+                conectarWebSocket();
+            }
         });
+
+        function guardarIP() {
+            const ip = ipInput.value.trim();
+            if (ip) {
+                localStorage.setItem('godot_ip', ip);
+                conectarWebSocket();
+                alert("✓ IP Guardada correctamente: " + ip);
+            }
+        }
 
         function conectarWebSocket() {
             const ip = ipInput.value.trim();
@@ -133,7 +144,7 @@
             }
         }
 
-        // MediaPipe Pose Detección
+        // Detección Pose MediaPipe
         const pose = new Pose({
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
         });
@@ -159,53 +170,90 @@
         function onResults(results) {
             canvasCtx.save();
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            // Fondo totalmente negro
+            canvasCtx.fillStyle = '#000000';
+            canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
 
             if (results.poseLandmarks) {
                 const lm = results.poseLandmarks;
 
-                // Valores de Sensibilidad
-                const multMov = parseFloat(sensMovInput.value) / 5.0; // Factor entre 0.2 y 2.0
-                const sensGestos = parseFloat(sensAtaqueInput.value); // Valor de 1 a 10
+                // Sensibilidades
+                const multMov = parseFloat(sensMovInput.value) / 5.0;
+                const sensGestos = parseFloat(sensAtaqueInput.value);
 
                 // Puntos Clave
                 const nariz = lm[0];
-                const munecaDer = lm[16];
-                const munecaIzq = lm[15];
-                const tobilloDer = lm[28];
-                const tobilloIzq = lm[27];
-                const caderaDer = lm[24];
-                const caderaIzq = lm[23];
+                const hombroIzq = lm[11], hombroDer = lm[12];
+                const codoIzq = lm[13], codoDer = lm[14];
+                const munecaIzq = lm[15], munecaDer = lm[16];
+                const caderaIzq = lm[23], caderaDer = lm[24];
+                const rodillaIzq = lm[25], rodillaDer = lm[26];
+                const tobilloIzq = lm[27], tobilloDer = lm[28];
 
-                // Posición X Calibrada por Sensibilidad de Movimiento
+                // Función auxiliar para coordenadas en Canvas
+                const getX = (p) => p.x * canvasElement.width;
+                const getY = (p) => p.y * canvasElement.height;
+
+                // Dibujar Esqueleto / Monigote
+                canvasCtx.strokeStyle = '#00ffcc';
+                canvasCtx.lineWidth = 3;
+
+                function conectar(p1, p2) {
+                    canvasCtx.beginPath();
+                    canvasCtx.moveTo(getX(p1), getY(p2 ? p1 : p1));
+                    canvasCtx.lineTo(getX(p2), getY(p2));
+                    canvasCtx.stroke();
+                }
+
+                // Líneas del torso y extremidades
+                conectar(hombroIzq, hombroDer);
+                conectar(hombroIzq, codoIzq); conectar(codoIzq, munecaIzq);
+                conectar(hombroDer, codoDer); conectar(codoDer, munecaDer);
+                conectar(hombroIzq, caderaIzq); conectar(hombroDer, caderaDer);
+                conectar(caderaIzq, caderaDer);
+                conectar(caderaIzq, rodillaIzq); conectar(rodillaIzq, tobilloIzq);
+                conectar(caderaDer, rodillaDer); conectar(rodillaDer, tobilloDer);
+
+                // Cabeza (Nariz)
+                canvasCtx.fillStyle = '#ffffff';
+                canvasCtx.beginPath();
+                canvasCtx.arc(getX(nariz), getY(nariz), 8, 0, 2 * Math.PI);
+                canvasCtx.fill();
+
+                // Puntos resaltados para MANOS (Azul / Verde)
+                canvasCtx.fillStyle = '#00aaff';
+                canvasCtx.beginPath();
+                canvasCtx.arc(getX(munecaIzq), getY(munecaIzq), 7, 0, 2 * Math.PI);
+                canvasCtx.arc(getX(munecaDer), getY(munecaDer), 7, 0, 2 * Math.PI);
+                canvasCtx.fill();
+
+                // Puntos resaltados para PIES (Naranja)
+                canvasCtx.fillStyle = '#ff9900';
+                canvasCtx.beginPath();
+                canvasCtx.arc(getX(tobilloIzq), getY(tobilloIzq), 7, 0, 2 * Math.PI);
+                canvasCtx.arc(getX(tobilloDer), getY(tobilloDer), 7, 0, 2 * Math.PI);
+                canvasCtx.fill();
+
+                // Lógica de juego
                 let posX = 1.0 - nariz.x;
                 posX = 0.5 + (posX - 0.5) * multMov;
                 posX = Math.min(Math.max(posX, 0.0), 1.0);
 
-                // Profundidad
-                const anchoHombros = Math.abs(lm[11].x - lm[12].x);
+                const anchoHombros = Math.abs(hombroIzq.x - hombroDer.x);
                 const distanciaCamara = Math.min(Math.max(anchoHombros * 2.5, 0.1), 1.0);
 
-                // Umbral de Ataque según Sensibilidad (Entre más alto el valor, más fácil se activa)
                 const umbralGolpe = 0.25 - (sensGestos * 0.018);
                 const umbralPatada = 0.30 - (sensGestos * 0.02);
 
-                const golpe = (munecaDer.y < lm[12].y - umbralGolpe) || (munecaIzq.y < lm[11].y - umbralGolpe);
-
+                const golpe = (munecaDer.y < hombroDer.y - umbralGolpe) || (munecaIzq.y < hombroIzq.y - umbralGolpe);
                 const caderaY = (caderaDer.y + caderaIzq.y) / 2.0;
                 const patadaPie = (tobilloDer.y < caderaY + umbralPatada) || (tobilloIzq.y < caderaY + umbralPatada);
-
                 const patadaMano = (munecaDer.y < nariz.y) || (munecaIzq.y < nariz.y);
                 const salto = (nariz.y < 0.28);
                 const dirApuntado = (munecaDer.x < nariz.x) ? 1.0 : -1.0;
 
-                // Dibujar Punto de Referencia
-                canvasCtx.fillStyle = '#00ffcc';
-                canvasCtx.beginPath();
-                canvasCtx.arc(nariz.x * canvasElement.width, nariz.y * canvasElement.height, 5, 0, 2 * Math.PI);
-                canvasCtx.fill();
-
-                // Enviar Datos
+                // Enviar datos WebSocket
                 if (socket && socket.readyState === WebSocket.OPEN) {
                     const paquete = {
                         jugador: parseInt(jugadorSelect.value),
