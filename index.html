@@ -52,7 +52,6 @@
             </select>
         </div>
 
-        <!-- Barras de Sensibilidad -->
         <div class="slider-group">
             <div class="slider-label">
                 <span>Sensibilidad Desplazamiento (1-10):</span>
@@ -207,17 +206,20 @@
                 conectar(caderaIzq, rodillaIzq); conectar(rodillaIzq, tobilloIzq);
                 conectar(caderaDer, rodillaDer); conectar(rodillaDer, tobilloDer);
 
+                // Dibujar Cabeza
                 canvasCtx.fillStyle = '#ffffff';
                 canvasCtx.beginPath();
                 canvasCtx.arc(getX(nariz), getY(nariz), 8, 0, 2 * Math.PI);
                 canvasCtx.fill();
 
+                // Dibujar Manos (Azul)
                 canvasCtx.fillStyle = '#00aaff';
                 canvasCtx.beginPath();
                 canvasCtx.arc(getX(munecaIzq), getY(munecaIzq), 7, 0, 2 * Math.PI);
                 canvasCtx.arc(getX(munecaDer), getY(munecaDer), 7, 0, 2 * Math.PI);
                 canvasCtx.fill();
 
+                // Dibujar Pies (Naranja)
                 canvasCtx.fillStyle = '#ff9900';
                 canvasCtx.beginPath();
                 canvasCtx.arc(getX(tobilloIzq), getY(tobilloIzq), 7, 0, 2 * Math.PI);
@@ -231,19 +233,22 @@
                 const anchoHombros = Math.abs(hombroIzq.x - hombroDer.x);
                 const distanciaCamara = Math.min(Math.max(anchoHombros * 2.5, 0.1), 1.0);
 
-                const umbralGolpe = 0.25 - (sensGestos * 0.018);
-                const umbralPatada = 0.30 - (sensGestos * 0.02);
+                const umbralGolpe = 0.12 - (sensGestos * 0.008);
+                const umbralPatada = 0.28 - (sensGestos * 0.015);
 
-                // GESTO DE BLOQUEO: Ambas manos por encima de la nariz
-                const bloqueo = (munecaDer.y < nariz.y) && (munecaIzq.y < nariz.y);
+                // 1. BLOQUEO: Manos sobre hombros / cerca de la cabeza
+                const bloqueo = (munecaDer.y < hombroDer.y) && (munecaIzq.y < hombroIzq.y);
 
-                // GESTO DE GOLPE: Una mano se estira por encima del hombro
-                const golpe = !bloqueo && ((munecaDer.y < hombroDer.y - umbralGolpe) || (munecaIzq.y < hombroIzq.y - umbralGolpe));
+                // 2. PIÑA: Una sola mano se estira por encima del hombro (sin estar en bloqueo)
+                const manoDerArriba = munecaDer.y < (hombroDer.y - umbralGolpe);
+                const manoIzqArriba = munecaIzq.y < (hombroIzq.y - umbralGolpe);
+                const golpe = !bloqueo && (manoDerArriba || manoIzqArriba);
 
+                // 3. PATADA: ÚNICAMENTE CON LOS PIES (Tobillo sube cerca de la cadera)
                 const caderaY = (caderaDer.y + caderaIzq.y) / 2.0;
-                const patadaPie = (tobilloDer.y < caderaY + umbralPatada) || (tobilloIzq.y < caderaY + umbralPatada);
-                const patadaMano = (munecaDer.y < nariz.y) || (munecaIzq.y < nariz.y);
-                const salto = (nariz.y < 0.28);
+                const patada = (tobilloDer.y < caderaY + umbralPatada) || (tobilloIzq.y < caderaY + umbralPatada);
+
+                const salto = (nariz.y < 0.25);
                 const dirApuntado = (munecaDer.x < nariz.x) ? 1.0 : -1.0;
 
                 if (socket && socket.readyState === WebSocket.OPEN) {
@@ -254,8 +259,7 @@
                         y: nariz.y,
                         distancia_camara: distanciaCamara,
                         golpe: golpe ? 1 : 0,
-                        patada: patadaPie ? 1 : 0,
-                        patada_mano: patadaMano ? 1 : 0,
+                        patada: patada ? 1 : 0,
                         bloqueo: bloqueo ? 1 : 0,
                         salto: salto ? 1 : 0,
                         dir_apuntado: dirApuntado
