@@ -169,4 +169,36 @@
                 const patadaMano = (munecaDer.y < nariz.y) || (munecaIzq.y < nariz.y);
 
                 // Salto (Cabeza/Nariz sube repentinamente)
-                const salto = (nariz.y < 0.3
+                const salto = (nariz.y < 0.3);
+
+                // Dirección Apuntado (Zombies)
+                const dirApuntado = (munecaDer.x < nariz.x) ? 1.0 : -1.0;
+
+                // Dibujar Puntos Clave
+                canvasCtx.fillStyle = '#00ffcc';
+                canvasCtx.beginPath();
+                canvasCtx.arc(nariz.x * canvasElement.width, nariz.y * canvasElement.height, 5, 0, 2 * Math.PI);
+                canvasCtx.fill();
+
+                // Enviar Datos por WebSocket
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    const paquete = {
+                        jugador: parseInt(jugadorSelect.value),
+                        modo: modoSelect.value,
+                        x: posX,
+                        y: nariz.y,
+                        distancia_camara: distanciaCamara,
+                        golpe: golpe ? 1 : 0,
+                        patada: patadaPie ? 1 : 0,
+                        patada_mano: patadaMano ? 1 : 0,
+                        salto: salto ? 1 : 0,
+                        dir_apuntado: dirApuntado
+                    };
+                    socket.send(JSON.stringify(paquete));
+                }
+            }
+            canvasCtx.restore();
+        }
+    </script>
+</body>
+</html>
