@@ -2,284 +2,171 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Controlador Pong Sports Arcade</title>
-    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Control Cam - Arcade</title>
+    <!-- MediaPipe Pose -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
-
     <style>
-        body {
-            margin: 0; padding: 0;
-            background-color: #121212; color: #ffffff;
-            font-family: Arial, sans-serif;
-            display: flex; flex-direction: column;
-            align-items: center; justify-content: flex-start;
-            height: 100vh; overflow: hidden;
-            box-sizing: border-box; padding-top: 10px;
-        }
-        #contenedor-camara {
-            position: relative; width: 90vw; max-width: 640px; height: 30vh;
-            border: 3px solid #333; border-radius: 10px; background-color: #000;
-        }
-        video { display: none; }
-        canvas {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            transform: scaleX(-1);
-        }
-        #panel-control { 
-            margin-top: 6px; text-align: center; width: 90vw; max-width: 640px; 
-            display: flex; flex-direction: column; gap: 6px; align-items: center;
-        }
-        .fina-linea { display: flex; gap: 4px; justify-content: center; width: 100%; }
-        input, select {
-            padding: 8px; border-radius: 5px;
-            border: 1px solid #555; background-color: #222; color: white; text-align: center;
-            font-size: 13px;
-        }
-        input { width: 45%; }
-        select { width: 45%; }
-        
-        .boton-modo {
-            padding: 8px; font-size: 11px; font-weight: bold; border-radius: 6px;
-            border: none; cursor: pointer; color: white; flex: 1;
-        }
-        .btn-squash { background-color: #0088ff; }
-        .btn-box { background-color: #ff3333; }
-        .btn-zombie { background-color: #00cc44; }
-        .btn-futbol { background-color: #ffaa00; color: black; }
-        .btn-accion { background-color: #ffcc00; color: black; width: 98%; padding: 10px; font-weight: bold; border-radius: 5px; border: none; font-size: 13px;}
-        .btn-menu { background-color: #555555; width: 98%; }
-        .btn-conectar { background-color: #00ffcc; color: black; font-weight: bold; width: 98%; padding: 10px; border: none; border-radius: 5px;}
-        
-        #estado-conexion { font-size: 12px; color: #ff3333; }
+        * { box-sizing: border-box; touch-action: manipulation; user-select: none; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #121212; color: white; margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; }
+        h2 { margin: 5px 0; font-size: 1.2rem; }
+        .setup-card { background: #1e1e1e; padding: 12px; border-radius: 10px; width: 100%; max-width: 400px; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .form-group { display: flex; gap: 8px; margin-bottom: 8px; }
+        input, select, button { padding: 10px; border-radius: 6px; border: 1px solid #333; background: #2a2a2a; color: white; font-size: 0.9rem; }
+        input[type="text"] { flex: 1; }
+        button { background: #007acc; font-weight: bold; cursor: pointer; border: none; }
+        button:active { background: #005999; }
+        .btn-iniciar { background: #28a745; width: 100%; font-size: 1.1rem; padding: 12px; margin-top: 5px; }
+        .cam-container { position: relative; width: 100%; max-width: 400px; height: 240px; background: #000; border-radius: 10px; overflow: hidden; }
+        video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); }
+        .status { position: absolute; top: 5px; left: 5px; background: rgba(0,0,0,0.7); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; color: #00ffcc; }
     </style>
 </head>
 <body>
 
-    <h3 style="margin: 2px 0;">PONG SPORTS ARCADE</h3>
-    
-    <div id="contenedor-camara">
-        <video id="webcam" autoplay playsinline></video>
-        <canvas id="lienzo_dibujo"></canvas>
-    </div>
+    <h2>Control Remoto por Cámara</h2>
 
-    <div id="panel-control">
-        <div class="fina-linea">
-            <button class="boton-modo btn-squash" onclick="seleccionarModo('squash')">🎾 SQUASH</button>
-            <button class="boton-modo btn-box" onclick="seleccionarModo('box')">🥊 BOX</button>
-            <button class="boton-modo btn-zombie" onclick="seleccionarModo('zombie')">🧟 ZOMBIES</button>
-            <button class="boton-modo btn-futbol" onclick="seleccionarModo('futbol')">⚽ FÚTBOL</button>
-        </div>
-        
-        <button class="btn-accion" onclick="activarBotonAccion()">🚀 INICIAR / SIGUIENTE NIVEL</button>
-        <button class="boton-modo btn-menu" onclick="seleccionarModo('menu')">🏠 MENÚ PRINCIPAL</button>
-
-        <div class="fina-linea">
-            <select id="selector-jugador">
-                <option value="1">Jugador 1 (Azul)</option>
-                <option value="2">Jugador 2 (Naranja)</option>
-            </select>
-            <select id="selector-camara" onchange="cambiarCamara()">
-                <option value="">Cargando cámaras...</option>
+    <div class="setup-card">
+        <div class="form-group">
+            <input type="text" id="ip" placeholder="IP PC (Ej: 192.168.0.150)">
+            <select id="jugador">
+                <option value="1">Jugador 1</option>
+                <option value="2">Jugador 2</option>
             </select>
         </div>
-
-        <div class="fina-linea">
-            <input type="text" id="ip_tv" value="192.168.100.7" placeholder="IP TV">
-            <button class="btn-conectar" onclick="conectarWebSocket()">Conectar TV</button>
+        <div class="form-group">
+            <select id="modo" style="width: 100%;">
+                <option value="menu">Menú Principal</option>
+                <option value="futbol">Fútbol</option>
+                <option value="kickboxing">Kickboxing Punk</option>
+                <option value="zombie">Zombies</option>
+                <option value="squash">Squash</option>
+            </select>
         </div>
-        
-        <div id="estado-conexion">Desconectado de la TV</div>
+        <button class="btn-iniciar" id="btnAccion" onclick="enviarAccionIniciar()">TOCÁ PARA INICIAR / ACCIÓN</button>
     </div>
 
-<script>
-    const videoElement = document.getElementById('webcam');
-    const canvasElement = document.getElementById('lienzo_dibujo');
-    const canvasCtx = canvasElement.getContext('2d');
-    const estadoConexion = document.getElementById('estado-conexion');
-    const selectorCamara = document.getElementById('selector-camara');
-    const selectorJugador = document.getElementById('selector-jugador');
-    
-    let ws = null;
-    let cameraInstance = null;
-    let wakeLock = null;
-    let modoActualSeleccionado = "menu";
+    <div class="cam-container">
+        <video id="video" playsinline></video>
+        <canvas id="canvas"></canvas>
+        <div class="status" id="status">Desconectado</div>
+    </div>
 
-    const FACTOR_SENSIBILIDAD_X = 2.0;
-    let posXFiltrada = 0.5;
-    let alturaBaseCabeza = 0.0;
+    <script>
+        let socket = null;
+        const videoElement = document.getElementById('video');
+        const canvasElement = document.getElementById('canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const statusElement = document.getElementById('status');
+        const ipInput = document.getElementById('ip');
+        const jugadorSelect = document.getElementById('jugador');
+        const modoSelect = document.getElementById('modo');
 
-    async function activarPantallaEncendida() {
-        try {
-            if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
-        } catch (err) {}
-    }
+        // Cargar IP guardada si existe
+        if (localStorage.getItem('godot_ip')) {
+            ipInput.value = localStorage.getItem('godot_ip');
+            conectarWebSocket();
+        }
 
-    async function listarCamaras() {
-        try {
-            await navigator.mediaDevices.getUserMedia({ video: true });
-            const dispositivos = await navigator.mediaDevices.enumerateDevices();
-            const videoDispositivos = dispositivos.filter(d => d.kind === 'videoinput');
-            
-            selectorCamara.innerHTML = '';
-            videoDispositivos.forEach((dispositivo, i) => {
-                const opcion = document.createElement('option');
-                opcion.value = dispositivo.deviceId;
-                opcion.text = dispositivo.label || `Cámara ${i + 1}`;
-                selectorCamara.appendChild(opcion);
-            });
-
-            if (videoDispositivos.length > 0) iniciarCamara(videoDispositivos[0].deviceId);
-        } catch (e) {}
-    }
-
-    function cambiarCamara() {
-        if (selectorCamara.value) iniciarCamara(selectorCamara.value);
-    }
-
-    function iniciarCamara(deviceId) {
-        if (cameraInstance) cameraInstance.stop();
-        cameraInstance = new Camera(videoElement, {
-            onFrame: async () => { await pose.send({image: videoElement}); },
-            width: 640, height: 480, deviceId: deviceId
+        ipInput.addEventListener('change', () => {
+            localStorage.setItem('godot_ip', ipInput.value);
+            conectarWebSocket();
         });
-        cameraInstance.start();
-    }
 
-    function seleccionarModo(modo) {
-        modoActualSeleccionado = modo;
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-                comando: "CAMBIAR_MODO",
-                modo: modo
-            }));
+        function conectarWebSocket() {
+            const ip = ipInput.value.trim();
+            if (!ip) return;
+
+            if (socket) socket.close();
+
+            statusElement.innerText = "Conectando...";
+            socket = new WebSocket(`ws://${ip}:8080`);
+
+            socket.onopen = () => {
+                statusElement.innerText = "✓ Conectado a Godot";
+                statusElement.style.color = "#00ff66";
+            };
+
+            socket.onerror = () => {
+                statusElement.innerText = "Error de conexión";
+                statusElement.style.color = "#ff3333";
+            };
+
+            socket.onclose = () => {
+                statusElement.innerText = "Desconectado";
+                statusElement.style.color = "#ffaa00";
+            };
         }
-    }
 
-    function activarBotonAccion() {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-                comando: "ACCION_INICIAR",
-                jugador: parseInt(selectorJugador.value)
-            }));
-        }
-    }
-
-    function conectarWebSocket() {
-        const ipTV = document.getElementById('ip_tv').value.trim();
-        if(!ipTV) return alert("Ingresá la IP de la TV");
-
-        activarPantallaEncendida();
-        estadoConexion.innerText = "Conectando a " + ipTV + "...";
-        estadoConexion.style.color = "#ffcc00";
-
-        ws = new WebSocket("ws://" + ipTV + ":8080");
-
-        ws.onopen = () => {
-            estadoConexion.innerText = "¡Conectado como J" + selectorJugador.value + "!";
-            estadoConexion.style.color = "#00ff00";
-            seleccionarModo(modoActualSeleccionado);
-        };
-
-        ws.onclose = () => {
-            estadoConexion.innerText = "Conexión cerrada.";
-            estadoConexion.style.color = "#ff3333";
-        };
-    }
-
-    const pose = new Pose({
-        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
-    });
-
-    pose.setOptions({
-        modelComplexity: 1,
-        smoothLandmarks: true,
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5
-    });
-
-    pose.onResults(onResults);
-
-    function onResults(results) {
-        canvasElement.width = canvasElement.clientWidth;
-        canvasElement.height = canvasElement.clientHeight;
-
-        canvasCtx.save();
-        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-        canvasCtx.fillStyle = "#000000";
-        canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
-
-        if (results.poseLandmarks) {
-            const p = results.poseLandmarks;
-            const nariz = p[0];
-            const hombroIzq = p[11], hombroDer = p[12];
-            const codoDer = p[14], codoIzq = p[13];
-            const muñecaDer = p[16], muñecaIzq = p[15];
-            const tobilloDer = p[28], tobilloIzq = p[27];
-            const rodillaDer = p[26], rodillaIzq = p[25];
-            const caderaDer = p[24], caderaIzq = p[23];
-
-            // 1. Posición Lateral (Eje X)
-            const centroX_Bruto = 1.0 - ((hombroIzq.x + hombroDer.x) / 2);
-            let posX_Calculada = 0.5 + (centroX_Bruto - 0.5) * FACTOR_SENSIBILIDAD_X;
-            posX_Calculada = Math.max(0.0, Math.min(1.0, posX_Calculada));
-            posXFiltrada = posXFiltrada + (posX_Calculada - posXFiltrada) * 0.2;
-
-            // 2. Detección de Salto (Eje Y Cabeza)
-            if (alturaBaseCabeza === 0.0) alturaBaseCabeza = nariz.y;
-            else alturaBaseCabeza = alturaBaseCabeza * 0.98 + nariz.y * 0.02;
-            let salto = (alturaBaseCabeza - nariz.y > 0.06) ? 1 : 0;
-
-            // 3. Dirección de Apuntado (Inversión para Espejo)
-            let manoDominanteX = 1.0 - muñecaDer.x;
-            let dirApuntado = (manoDominanteX >= centroX_Bruto) ? 1.0 : -1.0;
-
-            // 4. Disparo / Patada
-            let disparo = 0;
-            if (muñecaDer.y < hombroDer.y + 0.10 || muñecaIzq.y < hombroIzq.y + 0.10 ||
-                muñecaDer.y < codoDer.y + 0.08 || muñecaIzq.y < codoIzq.y + 0.08) {
-                disparo = 1;
-            }
-
-            let patada = 0;
-            const caderaMediaY = (caderaDer.y + caderaIzq.y) / 2;
-            if (tobilloDer.y < caderaMediaY + 0.28 || tobilloIzq.y < caderaMediaY + 0.28 ||
-                rodillaDer.y < caderaMediaY + 0.15 || rodillaIzq.y < caderaMediaY + 0.15 ||
-                muñecaDer.y < hombroDer.y || muñecaIzq.y < hombroIzq.y) {
-                patada = 1;
-            }
-
-            const drawX = posXFiltrada * canvasElement.width;
-            const drawY = canvasElement.height / 2;
-            canvasCtx.strokeStyle = selectorJugador.value === "1" ? "#0088ff" : "#ff6600";
-            canvasCtx.lineWidth = 4;
-            canvasCtx.beginPath();
-            canvasCtx.arc(drawX, drawY - (salto ? 50 : 30), 15, 0, 2 * Math.PI);
-            canvasCtx.moveTo(drawX, drawY - (salto ? 35 : 15));
-            canvasCtx.lineTo(drawX, drawY + (salto ? 10 : 30));
-            
-            if (patada === 1) {
-                canvasCtx.lineTo(drawX + (25 * dirApuntado), drawY + 15);
-            }
-            canvasCtx.stroke();
-
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    modo: modoActualSeleccionado,
-                    jugador: parseInt(selectorJugador.value),
-                    x: Number(posXFiltrada.toFixed(3)),
-                    salto: salto,
-                    dir_apuntado: dirApuntado,
-                    golpe: disparo,
-                    patada: patada
-                }));
+        function enviarAccionIniciar() {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                const datos = {
+                    comando: "ACCION_INICIAR",
+                    jugador: parseInt(jugadorSelect.value),
+                    modo: modoSelect.value
+                };
+                socket.send(JSON.stringify(datos));
             }
         }
-        canvasCtx.restore();
-    }
 
-    listarCamaras();
-</script>
-</body>
-</html>
+        // MediaPipe Pose Detección
+        const pose = new Pose({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+        });
+
+        pose.setOptions({
+            modelComplexity: 1,
+            smoothLandmarks: true,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        pose.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await pose.send({ image: videoElement });
+            },
+            width: 320,
+            height: 240
+        });
+        camera.start();
+
+        function onResults(results) {
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.poseLandmarks) {
+                const lm = results.poseLandmarks;
+
+                // Referencias
+                const nariz = lm[0];
+                const munecaDer = lm[16];
+                const munecaIzq = lm[15];
+                const tobilloDer = lm[28];
+                const tobilloIzq = lm[27];
+                const caderaDer = lm[24];
+                const caderaIzq = lm[23];
+
+                // Calculo Posicion X (Cuerpo)
+                const posX = 1.0 - nariz.x; // Invertido por espejo
+
+                // Distancia a la cámara (profundidad para Zombies)
+                const anchoHombros = Math.abs(lm[11].x - lm[12].x);
+                const distanciaCamara = Math.min(Math.max(anchoHombros * 2.5, 0.1), 1.0);
+
+                // Detección Golpe (Mano extendida frente a la cámara o elevada)
+                const golpe = (munecaDer.y < lm[12].y - 0.1) || (munecaIzq.y < lm[11].y - 0.1);
+
+                // Detección Patada (Pie elevado cerca de la cadera)
+                const caderaY = (caderaDer.y + caderaIzq.y) / 2.0;
+                const patadaPie = (tobilloDer.y < caderaY + 0.15) || (tobilloIzq.y < caderaY + 0.15);
+
+                // Patada Mano (Gesto especial para Fútbol)
+                const patadaMano = (munecaDer.y < nariz.y) || (munecaIzq.y < nariz.y);
+
+                // Salto (Cabeza/Nariz sube repentinamente)
+                const salto = (nariz.y < 0.3
