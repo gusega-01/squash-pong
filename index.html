@@ -22,7 +22,7 @@
         button:active { background: #005999; }
         .btn-save { background: #17a2b8; padding: 10px 12px; font-size: 0.85rem; }
         .btn-iniciar { background: #28a745; width: 100%; font-size: 1.1rem; padding: 12px; margin-top: 5px; }
-        .cam-container { position: relative; width: 100%; max-width: 400px; height: 240px; background: #000; border-radius: 10px; overflow: hidden; border: 2px solid #333; }
+        .cam-container { position: relative; width: 100%; max-width: 400px; height: 120px; background: #000; border-radius: 10px; overflow: hidden; border: 2px solid #333; }
         video { display: none; }
         canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); background: #000; }
         .status { position: absolute; top: 5px; left: 5px; background: rgba(0,0,0,0.85); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; color: #00ffcc; z-index: 10; }
@@ -71,6 +71,7 @@
         <button class="btn-iniciar" id="btnAccion" onclick="enviarAccionIniciar()">TOCÁ PARA INICIAR / ACCIÓN</button>
     </div>
 
+    <!-- Contenedor de cámara compacto para dar más espacio arriba -->
     <div class="cam-container">
         <video id="video" playsinline></video>
         <canvas id="canvas"></canvas>
@@ -89,7 +90,6 @@
         const sensMovInput = document.getElementById('sensMov');
         const sensAtaqueInput = document.getElementById('sensAtaque');
 
-        // Historial para evitar ráfagas de patadas o saltos involuntarios
         let ultimoSaltoTiempo = 0;
         let ultimaPatadaTiempo = 0;
 
@@ -193,7 +193,7 @@
                 const getY = (p) => p.y * canvasElement.height;
 
                 canvasCtx.strokeStyle = '#00ffcc';
-                canvasCtx.lineWidth = 3;
+                canvasCtx.lineWidth = 2;
 
                 function conectar(p1, p2) {
                     canvasCtx.beginPath();
@@ -213,21 +213,7 @@
                 // Cabeza
                 canvasCtx.fillStyle = '#ffffff';
                 canvasCtx.beginPath();
-                canvasCtx.arc(getX(nariz), getY(nariz), 8, 0, 2 * Math.PI);
-                canvasCtx.fill();
-
-                // Manos (Azul)
-                canvasCtx.fillStyle = '#00aaff';
-                canvasCtx.beginPath();
-                canvasCtx.arc(getX(munecaIzq), getY(munecaIzq), 7, 0, 2 * Math.PI);
-                canvasCtx.arc(getX(munecaDer), getY(munecaDer), 7, 0, 2 * Math.PI);
-                canvasCtx.fill();
-
-                // Pies (Naranja)
-                canvasCtx.fillStyle = '#ff9900';
-                canvasCtx.beginPath();
-                canvasCtx.arc(getX(tobilloIzq), getY(tobilloIzq), 7, 0, 2 * Math.PI);
-                canvasCtx.arc(getX(tobilloDer), getY(tobilloDer), 7, 0, 2 * Math.PI);
+                canvasCtx.arc(getX(nariz), getY(nariz), 4, 0, 2 * Math.PI);
                 canvasCtx.fill();
 
                 let posX = 1.0 - nariz.x;
@@ -237,27 +223,24 @@
                 const anchoHombros = Math.abs(hombroIzq.x - hombroDer.x);
                 const distanciaCamara = Math.min(Math.max(anchoHombros * 2.5, 0.1), 1.0);
 
-                // Sensibilidad y límites mejorados
-                const umbralGolpe = 0.09 - (sensGestos * 0.005);
-                const umbralPatada = 0.20 - (sensGestos * 0.01); // Más exigente para evitar spam
+                const umbralGolpe = 0.10 - (sensGestos * 0.007);
+                const umbralPatada = 0.20 - (sensGestos * 0.01);
                 const caderaY = (caderaDer.y + caderaIzq.y) / 2.0;
 
-                // 1. BLOQUEO (Mantener manos altas, sobre los hombros y cerca de la cabeza)
+                // 1. BLOQUEO: Manos arriba de los hombros cerca de la cabeza
                 const bloqueo = (munecaDer.y < hombroDer.y) && (munecaIzq.y < hombroIzq.y);
 
-                // 2. PIÑA (Extensiones de puño claras: ya sea hacia arriba o estirando adelante alejado del hombro)
+                // 2. PIÑA (MANOS): Una mano estirada (arriba o adelante)
                 const distManoHombroDer = Math.abs(munecaDer.x - hombroDer.x);
                 const distManoHombroIzq = Math.abs(munecaIzq.x - hombroIzq.x);
-                
                 const manoDerExtendida = (munecaDer.y < hombroDer.y - umbralGolpe) || (distManoHombroDer > 0.15 && munecaDer.y < hombroDer.y + 0.05);
                 const manoIzqExtendida = (munecaIzq.y < hombroIzq.y - umbralGolpe) || (distManoHombroIzq > 0.15 && munecaIzq.y < hombroIzq.y + 0.05);
-                
                 const golpe = !bloqueo && (manoDerExtendida || manoIzqExtendida);
 
-                // 3. PATADA (Filtro para que solo detecte elevaciones agresivas y espaciadas de los pies)
+                // 3. PATADA (PIES EXCLUSIVAMENTE): Tobillo sube sobre cadera (con Cooldown)
                 const ahora = Date.now();
                 let patada = false;
-                if (ahora - ultimaPatadaTiempo > 400) { // Cooldown de 400ms para evitar falsas patadas constantes
+                if (ahora - ultimaPatadaTiempo > 400) {
                     const pieDerSubio = tobilloDer.y < (caderaY - umbralPatada);
                     const pieIzqSubio = tobilloIzq.y < (caderaY - umbralPatada);
                     if (pieDerSubio || pieIzqSubio) {
@@ -266,10 +249,10 @@
                     }
                 }
 
-                // 4. SALTO (Ajustado para que solo detecte cuando te despegás fuerte de la base)
+                // 4. SALTO: Elevación vertical marcada de la nariz (con Cooldown)
                 let salto = false;
-                if (ahora - ultimoSaltoTiempo > 700) { // Cooldown para evitar el spam de saltos
-                    if (nariz.y < 0.16) { // Antes era 0.25 (muy sensible), ahora necesita elevarse mucho más arriba
+                if (ahora - ultimoSaltoTiempo > 700) {
+                    if (nariz.y < 0.16) {
                         salto = true;
                         ultimoSaltoTiempo = ahora;
                     }
