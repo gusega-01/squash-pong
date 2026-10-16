@@ -89,6 +89,10 @@
         const sensMovInput = document.getElementById('sensMov');
         const sensAtaqueInput = document.getElementById('sensAtaque');
 
+        // Historial para evitar ráfagas de patadas o saltos involuntarios
+        let ultimoSaltoTiempo = 0;
+        let ultimaPatadaTiempo = 0;
+
         window.addEventListener('DOMContentLoaded', () => {
             const ipGuardada = localStorage.getItem('godot_ip');
             if (ipGuardada) {
@@ -206,20 +210,20 @@
                 conectar(caderaIzq, rodillaIzq); conectar(rodillaIzq, tobilloIzq);
                 conectar(caderaDer, rodillaDer); conectar(rodillaDer, tobilloDer);
 
-                // Dibujar Cabeza
+                // Cabeza
                 canvasCtx.fillStyle = '#ffffff';
                 canvasCtx.beginPath();
                 canvasCtx.arc(getX(nariz), getY(nariz), 8, 0, 2 * Math.PI);
                 canvasCtx.fill();
 
-                // Dibujar Manos (Azul)
+                // Manos (Azul)
                 canvasCtx.fillStyle = '#00aaff';
                 canvasCtx.beginPath();
                 canvasCtx.arc(getX(munecaIzq), getY(munecaIzq), 7, 0, 2 * Math.PI);
                 canvasCtx.arc(getX(munecaDer), getY(munecaDer), 7, 0, 2 * Math.PI);
                 canvasCtx.fill();
 
-                // Dibujar Pies (Naranja)
+                // Pies (Naranja)
                 canvasCtx.fillStyle = '#ff9900';
                 canvasCtx.beginPath();
                 canvasCtx.arc(getX(tobilloIzq), getY(tobilloIzq), 7, 0, 2 * Math.PI);
@@ -233,22 +237,44 @@
                 const anchoHombros = Math.abs(hombroIzq.x - hombroDer.x);
                 const distanciaCamara = Math.min(Math.max(anchoHombros * 2.5, 0.1), 1.0);
 
-                const umbralGolpe = 0.12 - (sensGestos * 0.008);
-                const umbralPatada = 0.28 - (sensGestos * 0.015);
+                // Sensibilidad y límites mejorados
+                const umbralGolpe = 0.09 - (sensGestos * 0.005);
+                const umbralPatada = 0.20 - (sensGestos * 0.01); // Más exigente para evitar spam
+                const caderaY = (caderaDer.y + caderaIzq.y) / 2.0;
 
-                // 1. BLOQUEO: Manos sobre hombros / cerca de la cabeza
+                // 1. BLOQUEO (Mantener manos altas, sobre los hombros y cerca de la cabeza)
                 const bloqueo = (munecaDer.y < hombroDer.y) && (munecaIzq.y < hombroIzq.y);
 
-                // 2. PIÑA: Una sola mano se estira por encima del hombro (sin estar en bloqueo)
-                const manoDerArriba = munecaDer.y < (hombroDer.y - umbralGolpe);
-                const manoIzqArriba = munecaIzq.y < (hombroIzq.y - umbralGolpe);
-                const golpe = !bloqueo && (manoDerArriba || manoIzqArriba);
+                // 2. PIÑA (Extensiones de puño claras: ya sea hacia arriba o estirando adelante alejado del hombro)
+                const distManoHombroDer = Math.abs(munecaDer.x - hombroDer.x);
+                const distManoHombroIzq = Math.abs(munecaIzq.x - hombroIzq.x);
+                
+                const manoDerExtendida = (munecaDer.y < hombroDer.y - umbralGolpe) || (distManoHombroDer > 0.15 && munecaDer.y < hombroDer.y + 0.05);
+                const manoIzqExtendida = (munecaIzq.y < hombroIzq.y - umbralGolpe) || (distManoHombroIzq > 0.15 && munecaIzq.y < hombroIzq.y + 0.05);
+                
+                const golpe = !bloqueo && (manoDerExtendida || manoIzqExtendida);
 
-                // 3. PATADA: ÚNICAMENTE CON LOS PIES (Tobillo sube cerca de la cadera)
-                const caderaY = (caderaDer.y + caderaIzq.y) / 2.0;
-                const patada = (tobilloDer.y < caderaY + umbralPatada) || (tobilloIzq.y < caderaY + umbralPatada);
+                // 3. PATADA (Filtro para que solo detecte elevaciones agresivas y espaciadas de los pies)
+                const ahora = Date.now();
+                let patada = false;
+                if (ahora - ultimaPatadaTiempo > 400) { // Cooldown de 400ms para evitar falsas patadas constantes
+                    const pieDerSubio = tobilloDer.y < (caderaY - umbralPatada);
+                    const pieIzqSubio = tobilloIzq.y < (caderaY - umbralPatada);
+                    if (pieDerSubio || pieIzqSubio) {
+                        patada = true;
+                        ultimaPatadaTiempo = ahora;
+                    }
+                }
 
-                const salto = (nariz.y < 0.25);
+                // 4. SALTO (Ajustado para que solo detecte cuando te despegás fuerte de la base)
+                let salto = false;
+                if (ahora - ultimoSaltoTiempo > 700) { // Cooldown para evitar el spam de saltos
+                    if (nariz.y < 0.16) { // Antes era 0.25 (muy sensible), ahora necesita elevarse mucho más arriba
+                        salto = true;
+                        ultimoSaltoTiempo = ahora;
+                    }
+                }
+
                 const dirApuntado = (munecaDer.x < nariz.x) ? 1.0 : -1.0;
 
                 if (socket && socket.readyState === WebSocket.OPEN) {
